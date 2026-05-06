@@ -15,7 +15,7 @@ class TrainingLogger:
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         self.path = os.path.join(log_dir, f"training_{ts}.jsonl")
         self._file = open(self.path, "w", encoding="utf-8")
-        print(f"[Logger] Ghi log → {self.path}")
+        print(f"[Logger] Ghi log -> {self.path}")
 
     def log(self, data: Dict[str, Any]):
         self._file.write(json.dumps(data) + "\n")

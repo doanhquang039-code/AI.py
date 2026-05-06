@@ -31,7 +31,7 @@ _DEFAULTS = {
         "reward_food": 10.0, "reward_hazard": -5.0,
         "reward_death": -20.0, "reward_step": -0.1,
         "reward_survive_bonus": 50.0,
-        "algorithms": ["q_learning", "dqn", "sarsa", "ppo", "a2c"],
+        "algorithms": ["q_learning", "dqn", "sarsa", "ppo", "a2c", "pathfinder"],
     },
     "q_learning": {
         "alpha": 0.1, "gamma": 0.95,
@@ -62,6 +62,7 @@ _DEFAULTS = {
     "training": {
         "num_episodes": 2000, "save_every": 100,
         "log_every": 10, "model_dir": "models", "log_dir": "logs",
+        "cooperative_learning": False, "curriculum_learning": False,
     },
     "visualization": {
         "fps": 30, "show_sensors": True, "show_trails": True,
@@ -74,6 +75,7 @@ _DEFAULTS = {
         "dqn":        [251, 191, 36],
         "ppo":        [16, 185, 129],
         "a2c":        [244, 63, 94],
+        "pathfinder": [255, 255, 255],
     },
 }
 

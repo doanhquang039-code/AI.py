@@ -12,6 +12,7 @@ class EntityType(IntEnum):
     HAZARD = 2
     OBSTACLE = 3
     AGENT = 4
+    PORTAL = 5
 
 
 @dataclass
@@ -50,3 +51,12 @@ class Obstacle(Entity):
     """Chướng ngại vật — agent không thể đi qua."""
     def __post_init__(self):
         self.entity_type = EntityType.OBSTACLE
+
+
+@dataclass
+class Portal(Entity):
+    """Cổng dịch chuyển — agent chạm vào sẽ bị dịch chuyển tới cổng còn lại."""
+    linked_portal: 'Portal' = None
+    
+    def __post_init__(self):
+        self.entity_type = EntityType.PORTAL

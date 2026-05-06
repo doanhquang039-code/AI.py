@@ -39,6 +39,7 @@ agent:
     - sarsa
     - ppo
     - a2c
+    - pathfinder
 
 # ── Q-Learning ─────────────────────────────────────────────
 q_learning:
@@ -101,6 +102,8 @@ training:
   log_every: 10
   model_dir: "models"
   log_dir: "logs"
+  cooperative_learning: true # Agents cùng loại dùng chung memory
+  curriculum_learning: true  # Tăng độ khó theo thời gian
 
 # ── Visualization ──────────────────────────────────────────
 visualization:
@@ -122,3 +125,4 @@ agent_colors:
   dqn:        [251, 191, 36]    # Vàng
   ppo:        [16, 185, 129]    # Xanh lá
   a2c:        [244, 63, 94]     # Đỏ hồng
+  pathfinder: [255, 255, 255]   # Trắng

@@ -17,6 +17,7 @@ _ALGO_TO_TYPE = {
     "dqn":        AgentType.DQN,
     "ppo":        AgentType.PPO,
     "a2c":        AgentType.A2C,
+    "pathfinder": AgentType.PATHFINDER,
 }
 
 
@@ -75,6 +76,10 @@ def create_brain(algo: str):
             print(f"[Factory] A2C error: {e}")
             return None
 
+    elif algo == "pathfinder":
+        from ai.pathfinder import AStarAgent
+        return AStarAgent(state_dim, action_dim)
+
     else:
         print(f"[Factory] Unknown algorithm: '{algo}'")
         return None
@@ -83,20 +88,32 @@ def create_brain(algo: str):
 def build_agents(world: VirtualWorld) -> List[WorldAgent]:
     """
     Tạo tất cả agents theo config settings.yaml.
-
-    algorithms: [q_learning, dqn, sarsa, ppo, a2c]
-    -> 1 agent mỗi thuật toán, màu từ agent_colors config.
+    Phân bổ đều số lượng theo agent.num_agents.
+    Nếu training.cooperative_learning = true, chia sẻ đối tượng brain.
     """
     algorithms = settings.algorithms
+    if not algorithms:
+        return []
+
     colors = settings.agent_colors
+    total_agents = settings.get("agent", "num_agents", default=len(algorithms))
+    cooperative = settings.get("training", "cooperative_learning", default=False)
 
     agents = []
     agent_id = 0
+    shared_brains = {}
 
-    for algo in algorithms:
-        brain = create_brain(algo)
-        if brain is None:
-            continue   # Skip thuật toán không khả dụng
+    for i in range(total_agents):
+        algo = algorithms[i % len(algorithms)]
+        
+        if cooperative and algo in shared_brains:
+            brain = shared_brains[algo]
+        else:
+            brain = create_brain(algo)
+            if brain is None:
+                continue   # Skip thuật toán không khả dụng
+            if cooperative:
+                shared_brains[algo] = brain
 
         agent_type = _ALGO_TO_TYPE.get(algo, AgentType.Q_LEARNING)
         color = colors.get(algo, (128, 128, 128))
@@ -110,7 +127,7 @@ def build_agents(world: VirtualWorld) -> List[WorldAgent]:
         )
         agents.append(agent)
         agent_id += 1
-        print(f"[Factory] Created Agent {agent_id - 1}: {algo} (color={color})")
+        print(f"[Factory] Created Agent {agent_id - 1}: {algo} (color={color}, shared_brain={cooperative})")
 
     print(f"[Factory] Total agents: {len(agents)}")
     return agents
@@ -136,11 +153,11 @@ def build_single_agent(
 
 def available_algorithms() -> List[str]:
     """Danh sách thuật toán có thể dùng."""
-    all_algos = ["q_learning", "sarsa", "dqn", "ppo", "a2c"]
+    all_algos = ["q_learning", "sarsa", "dqn", "ppo", "a2c", "pathfinder"]
     try:
         from ai.dqn import TORCH_AVAILABLE
         if not TORCH_AVAILABLE:
-            return ["q_learning", "sarsa"]
+            return ["q_learning", "sarsa", "pathfinder"]
     except ImportError:
-        return ["q_learning", "sarsa"]
+        return ["q_learning", "sarsa", "pathfinder"]
     return all_algos

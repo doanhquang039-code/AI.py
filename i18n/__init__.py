@@ -47,7 +47,10 @@ def set_language(lang: str) -> bool:
         return False
     _strings = _load(lang)
     _current_lang = lang
-    print(f"[i18n] Language set to: {lang} ({_LANG_NAMES.get(lang, lang)})")
+    try:
+        print(f"[i18n] Language set to: {lang} ({_LANG_NAMES.get(lang, lang)})")
+    except UnicodeEncodeError:
+        print(f"[i18n] Language set to: {lang}")
     return True
 
 

@@ -63,6 +63,7 @@ class Renderer:
         self.clock = pygame.time.Clock()
         self.episode = 0
         self.total_food_eaten = 0
+        self.frame_count = 0
 
         # Surfaces
         self.world_surf = pygame.Surface((self.W * self.cell, self.H * self.cell))
@@ -82,6 +83,13 @@ class Renderer:
         self.screen.blit(self.hud_surf, (self.W * self.cell, 0))
 
         pygame.display.flip()
+        
+        self.frame_count += 1
+        if self.frame_count % 30 == 0:
+            import os
+            os.makedirs("logs", exist_ok=True)
+            pygame.image.save(self.world_surf, "logs/latest_frame.png")
+
         self.clock.tick(cfg.VISUAL.fps)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -90,7 +98,19 @@ class Renderer:
 
     def _draw_world(self, agents: List[WorldAgent]):
         """Vẽ background, grid, entities, trails, sensors, agents."""
-        self.world_surf.fill(cfg.VISUAL.COLOR_BG)
+        # Chọn màu nền theo thời tiết
+        from core.weather import WeatherType
+        bg_color = cfg.VISUAL.COLOR_BG
+        current_weather = self.world.weather_manager.current
+        
+        if current_weather == WeatherType.WINTER:
+            bg_color = (25, 30, 45)  # Hơi xanh dương lạnh
+        elif current_weather == WeatherType.HEATWAVE:
+            bg_color = (40, 25, 20)  # Nóng đỏ
+        elif current_weather == WeatherType.STORM:
+            bg_color = (20, 20, 20)  # Tối thui
+            
+        self.world_surf.fill(bg_color)
         self._draw_grid()
         self._draw_entities()
         if cfg.VISUAL.show_trails:
@@ -141,6 +161,18 @@ class Renderer:
             pygame.draw.rect(self.world_surf, cfg.VISUAL.COLOR_OBSTACLE, rect)
             # Edge highlight
             pygame.draw.rect(self.world_surf, (70, 80, 100), rect, 1)
+
+        # Vẽ Portals
+        for (x, y) in self.world.portals:
+            cx, cy = x * cell + cell // 2, y * cell + cell // 2
+            r = cell // 2 - 2
+            # Glow
+            glow = pygame.Surface((cell, cell), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (155, 89, 182, 100), (cell//2, cell//2), cell//2)
+            self.world_surf.blit(glow, (x * cell, y * cell))
+            # Core
+            pygame.draw.circle(self.world_surf, (142, 68, 173), (cx, cy), r)
+            pygame.draw.circle(self.world_surf, (210, 180, 222), (cx, cy), r - 2, 2)
 
     def _draw_trails(self, agents: List[WorldAgent]):
         """Vẽ vết di chuyển của agent."""
@@ -264,6 +296,13 @@ class Renderer:
         self.hud_surf.blit(step_txt, (pad, y))
         y += 20
 
+        # Weather
+        weather = self.world.weather_manager.current.value
+        icon = "☀️" if weather == "Normal" else "❄️" if weather == "Winter" else "🏜️" if weather == "Heatwave" else "⛈️"
+        w_txt = self.font_md.render(f"Thời tiết: {icon} {weather}", True, (255, 255, 255))
+        self.hud_surf.blit(w_txt, (pad, y))
+        y += 24
+
         if paused:
             pause_txt = self.font_md.render(f"⏸ {t('hud_paused')}", True, (255, 200, 50))
             self.hud_surf.blit(pause_txt, (pad, y))
@@ -364,10 +403,18 @@ class Renderer:
         """Xử lý keyboard events. Trả về dict các actions."""
         events = {"quit": False, "pause": False, "reset": False,
                   "speed_up": False, "speed_down": False,
-                  "toggle_sensors": False, "toggle_trails": False}
+                  "toggle_sensors": False, "toggle_trails": False,
+                  "spawn_food": None, "spawn_hazard": None}
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 events["quit"] = True
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                x, y = event.pos[0] // self.cell, event.pos[1] // self.cell
+                if 0 <= x < self.W and 0 <= y < self.H:
+                    if event.button == 1:
+                        events["spawn_food"] = (x, y)
+                    elif event.button == 3:
+                        events["spawn_hazard"] = (x, y)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     events["pause"] = True

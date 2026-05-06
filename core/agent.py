@@ -25,6 +25,7 @@ class AgentType(Enum):
     DQN        = "DQN"
     PPO        = "PPO"
     A2C        = "A2C"
+    PATHFINDER = "Pathfinder"
 
 
 class WorldAgent:
@@ -46,6 +47,9 @@ class WorldAgent:
         self.brain = brain
         self.world = world
         self.color = color
+
+        if hasattr(self.brain, "set_agent"):
+            self.brain.set_agent(self)
 
         # State
         self.x: int = 0
@@ -165,8 +169,21 @@ class WorldAgent:
                 self.energy -= damage
                 reward += cfg.AGENT.reward_hazard
 
-        # Giảm energy theo thời gian
-        self.energy -= cfg.AGENT.energy_decay
+            elif cell == EntityType.PORTAL:
+                portal = self.world.portals.get((self.x, self.y))
+                if portal and portal.linked_portal:
+                    self.x, self.y = portal.linked_portal.x, portal.linked_portal.y
+                    self.trail.clear()
+                    
+                    import json, os
+                    from datetime import datetime
+                    os.makedirs("logs", exist_ok=True)
+                    event = {"time": datetime.now().strftime("%H:%M:%S"), "msg": f"🌀 Agent {self.id} ({self.agent_type.value}) vừa bị dịch chuyển không gian!"}
+                    with open("logs/events.jsonl", "a", encoding="utf-8") as f:
+                        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+        # Giảm energy theo thời gian (phụ thuộc thời tiết)
+        self.energy -= cfg.AGENT.energy_decay * self.world.weather_manager.get_energy_multiplier()
 
         # Cập nhật trail
         self.trail.append((self.x, self.y))

@@ -58,6 +58,10 @@ def run_episode(world: VirtualWorld, agents: List[WorldAgent]) -> dict:
         for agent in agents:
             if agent.is_alive:
                 agent.step()
+            elif agent.energy <= 0 and step > 10:
+                if not hasattr(agent, '_death_reported'):
+                    _log_event(f"💀 Agent {agent.id} ({agent.agent_type.value}) đã chết tại step {step}!")
+                    agent._death_reported = True
 
         all_dead = all(not a.is_alive for a in agents)
         step += 1
@@ -96,6 +100,7 @@ def run_visual(args):
     episode = 0
     paused = False
 
+    world.update_curriculum(episode)
     world.reset()
     for agent in agents:
         agent.reset()
@@ -129,9 +134,23 @@ def run_visual(args):
             cfg.VISUAL.fps = min(120, cfg.VISUAL.fps + 10)
         if events["speed_down"]:
             cfg.VISUAL.fps = max(5, cfg.VISUAL.fps - 10)
+        
+        if events["spawn_food"]:
+            world.spawn_custom_food(*events["spawn_food"])
+        if events["spawn_hazard"]:
+            world.spawn_custom_hazard(*events["spawn_hazard"])
 
         if not paused:
             world.step()
+            
+            # Kiểm tra thời tiết thay đổi để log event
+            current_weather = world.weather_manager.current.value
+            if not hasattr(world, '_last_weather'):
+                world._last_weather = current_weather
+            elif world._last_weather != current_weather:
+                _log_event(f"🌤 Thời tiết chuyển sang {current_weather}!")
+                world._last_weather = current_weather
+
             for agent in agents:
                 if agent.is_alive:
                     agent.step()
@@ -162,6 +181,7 @@ def run_visual(args):
                     _save_models(agents, args.model_dir, episode)
 
                 episode += 1
+                world.update_curriculum(episode)
                 world.reset()
                 for a in agents:
                     a.reset()
@@ -197,6 +217,7 @@ def run_train(args):
     pbar = tqdm(range(args.episodes), desc="Training", unit="ep")
 
     for episode in pbar:
+        world.update_curriculum(episode)
         ep_stats = run_episode(world, agents)
         ep_stats["episode"] = episode
         stats.update(ep_stats)
@@ -252,6 +273,7 @@ def run_compare(args):
 
     from tqdm import tqdm
     for ep in tqdm(range(episodes), desc="Comparing"):
+        world.update_curriculum(ep)
         ep_stats = run_episode(world, agents)
         for a_info in ep_stats["agents"]:
             if a_info["type"] == AgentType.Q_LEARNING.value:
@@ -358,6 +380,15 @@ def _save_models(agents: List[WorldAgent], model_dir: str, episode: int):
             path = os.path.join(model_dir, f"ql_agent{agent.id}_ep{episode}.npy")
             agent.brain.save(path)
 
+def _log_event(msg: str):
+    import json
+    import os
+    from datetime import datetime
+    os.makedirs("logs", exist_ok=True)
+    event_file = "logs/events.jsonl"
+    event = {"time": datetime.now().strftime("%H:%M:%S"), "msg": msg}
+    with open(event_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ARGPARSE

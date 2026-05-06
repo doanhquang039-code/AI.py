@@ -56,28 +56,28 @@
 
     <!-- METRICS ROW -->
     <section class="metrics-row">
-      <div class="metric-card" id="mc-episode">
+      <div class="metric-card glass-panel" id="mc-episode">
         <div class="metric-icon">📺</div>
         <div>
           <div class="metric-label">{{ t('metric_episode') }}</div>
           <div class="metric-value" id="m-episode">0</div>
         </div>
       </div>
-      <div class="metric-card" id="mc-food">
+      <div class="metric-card glass-panel" id="mc-food">
         <div class="metric-icon">🍎</div>
         <div>
           <div class="metric-label">{{ t('metric_food') }}</div>
           <div class="metric-value" id="m-food">—</div>
         </div>
       </div>
-      <div class="metric-card" id="mc-step">
+      <div class="metric-card glass-panel" id="mc-step">
         <div class="metric-icon">⏱</div>
         <div>
           <div class="metric-label">{{ t('metric_step') }}</div>
           <div class="metric-value" id="m-step">—</div>
         </div>
       </div>
-      <div class="metric-card" id="mc-eaten">
+      <div class="metric-card glass-panel" id="mc-eaten">
         <div class="metric-icon">🏆</div>
         <div>
           <div class="metric-label">{{ t('metric_eaten') }}</div>
@@ -86,21 +86,30 @@
       </div>
     </section>
 
-    <!-- CHARTS ROW -->
-    <section class="charts-row">
-      <div class="chart-card">
-        <div class="chart-header">
-          <h3>📈 {{ t('chart_reward') }}</h3>
-          <div class="legend" id="legend-reward"></div>
+    <!-- CHARTS & FEED ROW -->
+    <section class="middle-row">
+      <div class="charts-row">
+        <div class="chart-card glass-panel">
+          <div class="chart-header">
+            <h3>📈 {{ t('chart_reward') }}</h3>
+            <div class="legend" id="legend-reward"></div>
+          </div>
+          <canvas id="chart-reward"></canvas>
         </div>
-        <canvas id="chart-reward"></canvas>
+        <div class="chart-card glass-panel">
+          <div class="chart-header">
+            <h3>🍎 {{ t('chart_food') }}</h3>
+            <div class="legend" id="legend-food"></div>
+          </div>
+          <canvas id="chart-food"></canvas>
+        </div>
       </div>
-      <div class="chart-card">
-        <div class="chart-header">
-          <h3>🍎 {{ t('chart_food') }}</h3>
-          <div class="legend" id="legend-food"></div>
+
+      <div class="feed-panel glass-panel">
+        <div class="feed-title">🔔 Live Action Feed</div>
+        <div class="feed-list" id="live-feed">
+          <div class="feed-item"><div class="feed-time">Hệ thống</div><div class="feed-msg">Đang chờ kết nối mô phỏng...</div></div>
         </div>
-        <canvas id="chart-food"></canvas>
       </div>
     </section>
 
@@ -112,8 +121,19 @@
       </div>
     </section>
 
+    <!-- VISION ANALYSIS -->
+    <section class="vision-section glass-panel" style="margin-bottom: 2rem; padding: 1.5rem;">
+      <h3 class="section-title">👁️ Phân Tích Hình Ảnh (Gemini Vision)</h3>
+      <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+        <input type="password" id="gemini-api-key" placeholder="Nhập Gemini API Key..." style="flex: 1; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-body); color: var(--text-primary);" />
+        <button onclick="analyzeVision()" style="padding: 0.75rem 1.5rem; border-radius: 8px; border: none; background: #6366f1; color: white; font-weight: 600; cursor: pointer;">Chụp & Phân Tích</button>
+      </div>
+      <div id="vision-result" style="margin-top: 1rem; padding: 1rem; border-radius: 8px; background: rgba(99, 102, 241, 0.1); color: var(--text-primary); display: none; line-height: 1.6;">
+      </div>
+    </section>
+
     <!-- INFO FOOTER -->
-    <section class="info-bar">
+    <section class="info-bar glass-panel">
       <div class="info-item">
         <span class="info-label">{{ t('info_algorithm') }}</span>
         <span class="info-val">Q-Learning, SARSA, DQN, PPO, A2C</span>
@@ -136,6 +156,56 @@
         fetch(`/api/lang/${lang}`).then(res => res.json()).then(data => {
             if (data.success) window.location.reload();
         });
+    }
+
+    // Live Feed handler via Polling
+    setInterval(async () => {
+      try {
+        const res = await fetch("/api/events");
+        const data = await res.json();
+        if (data.events && data.events.length > 0) {
+          const feed = document.getElementById("live-feed");
+          data.events.forEach(ev => {
+            const div = document.createElement("div");
+            div.className = "feed-item";
+            div.innerHTML = `<div class="feed-time">${ev.time}</div><div class="feed-msg">${ev.msg}</div>`;
+            feed.prepend(div);
+            if (feed.children.length > 20) {
+              feed.removeChild(feed.lastChild);
+            }
+          });
+        }
+      } catch (e) {}
+    }, 2000);
+
+    async function analyzeVision() {
+      const apiKey = document.getElementById('gemini-api-key').value;
+      const resultDiv = document.getElementById('vision-result');
+      
+      if (!apiKey) {
+        alert("Vui lòng nhập Gemini API Key!");
+        return;
+      }
+      
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = "<em>Đang chụp màn hình và phân tích (có thể mất 5-10 giây)...</em>";
+      
+      try {
+        const res = await fetch("/api/analyze-vision", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({api_key: apiKey})
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+          resultDiv.innerHTML = "<strong>Kết quả từ Gemini:</strong><br/>" + data.answer.replace(/\n/g, '<br/>');
+        } else {
+          resultDiv.innerHTML = "<strong style='color:#f43f5e'>Lỗi:</strong> " + data.message;
+        }
+      } catch (err) {
+        resultDiv.innerHTML = "<strong style='color:#f43f5e'>Lỗi kết nối:</strong> " + err;
+      }
     }
   </script>
 </body>

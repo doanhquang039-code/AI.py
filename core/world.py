@@ -9,7 +9,8 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 
 import config as cfg
-from core.entities import Entity, EntityType, Food, Hazard, Obstacle
+from core.entities import Entity, EntityType, Food, Hazard, Obstacle, Portal
+from core.weather import WeatherManager
 
 
 # 8 hướng di chuyển: (dx, dy)
@@ -45,12 +46,33 @@ class VirtualWorld:
         self.foods: Dict[Tuple[int, int], Food] = {}
         self.hazards: Dict[Tuple[int, int], Hazard] = {}
         self.obstacles: Dict[Tuple[int, int], Obstacle] = {}
+        self.portals: Dict[Tuple[int, int], Portal] = {}
 
         # Stats
         self.step_count: int = 0
         self.food_eaten: int = 0
 
+        self.current_num_food = cfg.WORLD.num_food
+        self.current_num_hazards = cfg.WORLD.num_hazards
+
+        self.weather_manager = WeatherManager(change_interval=400)
+
         self._initialize()
+
+    def update_curriculum(self, episode: int):
+        from config.settings_manager import settings
+        if not settings.get("training", "curriculum_learning", default=False):
+            self.current_num_food = cfg.WORLD.num_food
+            self.current_num_hazards = cfg.WORLD.num_hazards
+            return
+
+        max_ep = 500
+        progress = min(1.0, episode / max_ep)
+
+        # Mới đầu nhiều thức ăn, sau giảm dần về số lượng chuẩn
+        self.current_num_food = int(cfg.WORLD.num_food * (1.5 - 0.5 * progress))
+        # Mới đầu không có hazard, sau tăng dần lên mức chuẩn
+        self.current_num_hazards = int(cfg.WORLD.num_hazards * progress)
 
     # ─────────────────────────────────────────────────────────────────────────
     # INIT
@@ -62,18 +84,22 @@ class VirtualWorld:
         self.foods.clear()
         self.hazards.clear()
         self.obstacles.clear()
+        self.portals.clear()
 
-        # Sinh obstacles
+        # Sinh obstacles bằng Cellular Automata
         self._spawn_obstacles(cfg.WORLD.num_obstacles)
+        # Sinh portals
+        self._spawn_portals()
         # Sinh hazards
-        self._spawn_entities(cfg.WORLD.num_hazards, self._add_hazard)
+        self._spawn_entities(self.current_num_hazards, self._add_hazard)
         # Sinh food
-        self._spawn_entities(cfg.WORLD.num_food, self._add_food)
+        self._spawn_entities(self.current_num_food, self._add_food)
 
     def reset(self):
         """Reset world về trạng thái ban đầu."""
         self.step_count = 0
         self.food_eaten = 0
+        self.weather_manager.reset()
         self._initialize()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -92,23 +118,48 @@ class VirtualWorld:
         return None
 
     def _spawn_obstacles(self, n: int):
-        """Sinh obstacles theo cụm để tạo bức tường tự nhiên."""
-        placed = 0
-        while placed < n:
-            pos = self._random_empty_cell()
-            if pos is None:
-                break
-            # Cụm 1-3 ô
-            cluster = random.randint(1, 3)
-            x, y = pos
-            for _ in range(cluster):
-                if placed >= n:
-                    break
-                if 0 <= x < self.W and 0 <= y < self.H and self.grid[y, x] == EntityType.EMPTY:
+        """Sinh obstacles theo thuật toán Cellular Automata để tạo Hang động (Cave)."""
+        fill_prob = 0.28
+        temp_grid = np.random.choice([EntityType.OBSTACLE.value, EntityType.EMPTY.value], 
+                                     size=(self.H, self.W), p=[fill_prob, 1 - fill_prob])
+        
+        for _ in range(4):
+            new_grid = temp_grid.copy()
+            for y in range(self.H):
+                for x in range(self.W):
+                    rock_count = 0
+                    for dy in [-1, 0, 1]:
+                        for dx in [-1, 0, 1]:
+                            if dx == 0 and dy == 0:
+                                continue
+                            nx, ny = x + dx, y + dy
+                            if nx < 0 or ny < 0 or nx >= self.W or ny >= self.H:
+                                rock_count += 1
+                            elif temp_grid[ny, nx] == EntityType.OBSTACLE.value:
+                                rock_count += 1
+                    if rock_count > 4:
+                        new_grid[y, x] = EntityType.OBSTACLE.value
+                    elif rock_count < 4:
+                        new_grid[y, x] = EntityType.EMPTY.value
+            temp_grid = new_grid
+            
+        for y in range(self.H):
+            for x in range(self.W):
+                if temp_grid[y, x] == EntityType.OBSTACLE.value:
                     self._add_obstacle(x, y)
-                    placed += 1
-                x += random.randint(-1, 1)
-                y += random.randint(-1, 1)
+
+    def _spawn_portals(self):
+        """Sinh 1 cặp portal."""
+        pos1 = self._random_empty_cell()
+        pos2 = self._random_empty_cell()
+        if pos1 and pos2:
+            p1 = Portal(x=pos1[0], y=pos1[1], entity_type=EntityType.PORTAL)
+            p2 = Portal(x=pos2[0], y=pos2[1], entity_type=EntityType.PORTAL)
+            p1.linked_portal = p2
+            p2.linked_portal = p1
+            self.portals[pos1] = p1
+            self.portals[pos2] = p2
+            self.grid[pos1[1], pos1[0]] = EntityType.PORTAL
 
     def _spawn_entities(self, n: int, add_fn):
         """Sinh n thực thể dùng hàm add_fn."""
@@ -133,6 +184,16 @@ class VirtualWorld:
         obs = Obstacle(x=x, y=y, entity_type=EntityType.OBSTACLE)
         self.obstacles[(x, y)] = obs
         self.grid[y, x] = EntityType.OBSTACLE
+
+    def spawn_custom_food(self, x: int, y: int):
+        """God mode: tự sinh food."""
+        if 0 <= x < self.W and 0 <= y < self.H and self.grid[y, x] == EntityType.EMPTY:
+            self._add_food(x, y)
+
+    def spawn_custom_hazard(self, x: int, y: int):
+        """God mode: tự sinh hazard."""
+        if 0 <= x < self.W and 0 <= y < self.H and self.grid[y, x] == EntityType.EMPTY:
+            self._add_hazard(x, y)
 
     # ─────────────────────────────────────────────────────────────────────────
     # QUERIES
@@ -186,12 +247,14 @@ class VirtualWorld:
     def step(self):
         """
         Cập nhật world mỗi tick:
+        - Cập nhật thời tiết
         - Tái sinh thức ăn ngẫu nhiên
         """
         self.step_count += 1
+        self.weather_manager.step()
 
         # Tái sinh thức ăn
-        if len(self.foods) < cfg.WORLD.num_food:
+        if len(self.foods) < self.current_num_food:
             if random.random() < cfg.WORLD.food_respawn_rate:
                 pos = self._random_empty_cell()
                 if pos:
@@ -207,9 +270,9 @@ class VirtualWorld:
         return 0.0
 
     def get_hazard_damage(self, x: int, y: int) -> float:
-        """Lấy damage từ hazard tại (x, y)."""
+        """Lấy damage từ hazard tại (x, y) phụ thuộc vào thời tiết."""
         if (x, y) in self.hazards:
-            return self.hazards[(x, y)].damage
+            return self.hazards[(x, y)].damage * self.weather_manager.get_hazard_multiplier()
         return 0.0
 
     # ─────────────────────────────────────────────────────────────────────────
