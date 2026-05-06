@@ -1,0 +1,66 @@
+{
+  "app_title": "AI虚拟世界",
+  "app_subtitle": "研究控制台",
+  "status_active": "训练中",
+  "status_waiting": "等待中...",
+  "status_connecting": "连接中...",
+
+  "metric_episode": "回合",
+  "metric_food": "世界食物量",
+  "metric_step": "世界步骤",
+  "metric_eaten": "总进食量",
+
+  "chart_reward": "奖励 / 回合",
+  "chart_food": "进食 / 回合",
+  "chart_steps": "步骤 / 回合",
+  "chart_alive": "存活智能体",
+
+  "section_agents": "智能体状态",
+  "agent_energy": "能量",
+  "agent_food": "食物",
+  "agent_score": "得分",
+  "agent_epsilon": "探索率",
+  "agent_steps": "步骤",
+  "agent_reward": "奖励",
+
+  "info_algorithm": "算法",
+  "info_state_dim": "状态维度",
+  "info_action_space": "动作空间",
+  "info_state_val": "27 (8方向 x 3传感器 + 能量 + 位置)",
+  "info_action_val": "9 (8方向 + 静止)",
+
+  "ctrl_title": "控制",
+  "ctrl_pause": "暂停/继续",
+  "ctrl_sensors": "切换传感器",
+  "ctrl_trails": "切换轨迹",
+  "ctrl_speed": "速度 +/-",
+  "ctrl_reset": "重置",
+  "ctrl_quit": "退出",
+  "ctrl_lang": "切换语言",
+
+  "algo_ql": "Q-学习",
+  "algo_sarsa": "SARSA",
+  "algo_dqn": "深度Q网络",
+  "algo_ppo": "近端策略优化",
+  "algo_a2c": "优势演员-评论家",
+
+  "log_saved": "模型已保存",
+  "log_loaded": "模型已加载",
+  "log_ep_end": "回合结束",
+  "log_training": "训练",
+
+  "hud_episode": "回合",
+  "hud_world_step": "世界步骤",
+  "hud_food": "食物",
+  "hud_paused": "已暂停",
+  "hud_agents": "智能体",
+
+  "sim_title": "AI虚拟世界 — 模拟",
+  "sim_start": "启动Pygame模拟...",
+  "sim_done": "模拟结束!",
+  "train_start": "开始训练...",
+  "train_done": "训练完成!",
+  "compare_start": "比较算法...",
+  "compare_chart_title": "算法比较",
+  "no_pytorch": "PyTorch未安装。仅Q-Learning模式。"
+}

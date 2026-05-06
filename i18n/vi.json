@@ -1,0 +1,66 @@
+{
+  "app_title": "Thế Giới AI Ảo",
+  "app_subtitle": "Bảng Điều Khiển Nghiên Cứu",
+  "status_active": "Đang Huấn Luyện",
+  "status_waiting": "Đang Chờ...",
+  "status_connecting": "Đang Kết Nối...",
+
+  "metric_episode": "Episode",
+  "metric_food": "Thức Ăn Trong World",
+  "metric_step": "Bước World",
+  "metric_eaten": "Tổng Thức Ăn Đã Ăn",
+
+  "chart_reward": "Phần Thưởng / Episode",
+  "chart_food": "Thức Ăn Ăn Được / Episode",
+  "chart_steps": "Bước / Episode",
+  "chart_alive": "Agents Còn Sống",
+
+  "section_agents": "Trạng Thái Agent",
+  "agent_energy": "Năng Lượng",
+  "agent_food": "Thức Ăn",
+  "agent_score": "Điểm",
+  "agent_epsilon": "Epsilon",
+  "agent_steps": "Bước",
+  "agent_reward": "Phần Thưởng",
+
+  "info_algorithm": "Thuật Toán",
+  "info_state_dim": "Chiều State",
+  "info_action_space": "Không Gian Hành Động",
+  "info_state_val": "27 (8 hướng x 3 cảm biến + năng lượng + vị trí)",
+  "info_action_val": "9 (8 hướng + đứng yên)",
+
+  "ctrl_title": "ĐIỀU KHIỂN",
+  "ctrl_pause": "Tạm Dừng/Tiếp Tục",
+  "ctrl_sensors": "Bật/Tắt Cảm Biến",
+  "ctrl_trails": "Bật/Tắt Vết Đi",
+  "ctrl_speed": "Tốc Độ +/-",
+  "ctrl_reset": "Đặt Lại",
+  "ctrl_quit": "Thoát",
+  "ctrl_lang": "Đổi Ngôn Ngữ",
+
+  "algo_ql": "Q-Learning",
+  "algo_sarsa": "SARSA",
+  "algo_dqn": "DQN",
+  "algo_ppo": "PPO",
+  "algo_a2c": "A2C",
+
+  "log_saved": "Đã lưu model",
+  "log_loaded": "Đã tải model",
+  "log_ep_end": "Episode kết thúc",
+  "log_training": "Huấn Luyện",
+
+  "hud_episode": "Episode",
+  "hud_world_step": "Bước World",
+  "hud_food": "Thức Ăn",
+  "hud_paused": "TẠM DỪNG",
+  "hud_agents": "AGENTS",
+
+  "sim_title": "Thế Giới AI Ảo — Mô Phỏng",
+  "sim_start": "Khởi động Pygame...",
+  "sim_done": "Mô phỏng kết thúc!",
+  "train_start": "Bắt đầu huấn luyện...",
+  "train_done": "Huấn luyện hoàn tất!",
+  "compare_start": "So sánh các thuật toán...",
+  "compare_chart_title": "So Sanh Thuat Toan",
+  "no_pytorch": "PyTorch chưa cài. Chỉ dùng Q-Learning."
+}

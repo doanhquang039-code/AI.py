@@ -1,0 +1,66 @@
+{
+  "app_title": "AI Virtual World",
+  "app_subtitle": "Research Dashboard",
+  "status_active": "Training Active",
+  "status_waiting": "Waiting...",
+  "status_connecting": "Connecting...",
+
+  "metric_episode": "Episode",
+  "metric_food": "Food in World",
+  "metric_step": "World Step",
+  "metric_eaten": "Total Food Eaten",
+
+  "chart_reward": "Reward / Episode",
+  "chart_food": "Food Eaten / Episode",
+  "chart_steps": "Steps / Episode",
+  "chart_alive": "Agents Alive",
+
+  "section_agents": "Agent Status",
+  "agent_energy": "Energy",
+  "agent_food": "Food",
+  "agent_score": "Score",
+  "agent_epsilon": "Epsilon",
+  "agent_steps": "Steps",
+  "agent_reward": "Reward",
+
+  "info_algorithm": "Algorithms",
+  "info_state_dim": "State Dim",
+  "info_action_space": "Action Space",
+  "info_state_val": "27 (8-dir x 3 sensors + energy + pos)",
+  "info_action_val": "9 (8 directions + stay)",
+
+  "ctrl_title": "CONTROLS",
+  "ctrl_pause": "Pause/Resume",
+  "ctrl_sensors": "Toggle Sensors",
+  "ctrl_trails": "Toggle Trails",
+  "ctrl_speed": "Speed +/-",
+  "ctrl_reset": "Reset",
+  "ctrl_quit": "Quit",
+  "ctrl_lang": "Switch Language",
+
+  "algo_ql": "Q-Learning",
+  "algo_sarsa": "SARSA",
+  "algo_dqn": "DQN",
+  "algo_ppo": "PPO",
+  "algo_a2c": "A2C",
+
+  "log_saved": "Model saved",
+  "log_loaded": "Model loaded",
+  "log_ep_end": "Episode ended",
+  "log_training": "Training",
+
+  "hud_episode": "Episode",
+  "hud_world_step": "World Step",
+  "hud_food": "Food",
+  "hud_paused": "PAUSED",
+  "hud_agents": "AGENTS",
+
+  "sim_title": "AI Virtual World — Simulation",
+  "sim_start": "Starting Pygame Simulation...",
+  "sim_done": "Simulation finished!",
+  "train_start": "Starting Headless Training...",
+  "train_done": "Training complete!",
+  "compare_start": "Comparing algorithms...",
+  "compare_chart_title": "Algorithm Comparison",
+  "no_pytorch": "PyTorch not installed. Q-Learning only mode."
+}

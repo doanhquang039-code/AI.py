@@ -1,0 +1,66 @@
+{
+  "app_title": "AI仮想世界",
+  "app_subtitle": "研究ダッシュボード",
+  "status_active": "トレーニング中",
+  "status_waiting": "待機中...",
+  "status_connecting": "接続中...",
+
+  "metric_episode": "エピソード",
+  "metric_food": "世界の食料",
+  "metric_step": "ワールドステップ",
+  "metric_eaten": "総食料摂取量",
+
+  "chart_reward": "報酬 / エピソード",
+  "chart_food": "食料 / エピソード",
+  "chart_steps": "ステップ / エピソード",
+  "chart_alive": "生存エージェント",
+
+  "section_agents": "エージェント状態",
+  "agent_energy": "エネルギー",
+  "agent_food": "食料",
+  "agent_score": "スコア",
+  "agent_epsilon": "イプシロン",
+  "agent_steps": "ステップ",
+  "agent_reward": "報酬",
+
+  "info_algorithm": "アルゴリズム",
+  "info_state_dim": "状態次元",
+  "info_action_space": "行動空間",
+  "info_state_val": "27 (8方向 x 3センサー + エネルギー + 位置)",
+  "info_action_val": "9 (8方向 + 静止)",
+
+  "ctrl_title": "コントロール",
+  "ctrl_pause": "一時停止/再開",
+  "ctrl_sensors": "センサー切替",
+  "ctrl_trails": "軌跡切替",
+  "ctrl_speed": "速度 +/-",
+  "ctrl_reset": "リセット",
+  "ctrl_quit": "終了",
+  "ctrl_lang": "言語切替",
+
+  "algo_ql": "Q学習",
+  "algo_sarsa": "SARSA",
+  "algo_dqn": "深層Qネットワーク",
+  "algo_ppo": "近端政策最適化",
+  "algo_a2c": "アドバンテージ俳優評論家",
+
+  "log_saved": "モデル保存済み",
+  "log_loaded": "モデル読み込み済み",
+  "log_ep_end": "エピソード終了",
+  "log_training": "トレーニング",
+
+  "hud_episode": "エピソード",
+  "hud_world_step": "ステップ",
+  "hud_food": "食料",
+  "hud_paused": "一時停止",
+  "hud_agents": "エージェント",
+
+  "sim_title": "AI仮想世界 — シミュレーション",
+  "sim_start": "Pygameを起動中...",
+  "sim_done": "シミュレーション終了!",
+  "train_start": "トレーニング開始...",
+  "train_done": "トレーニング完了!",
+  "compare_start": "アルゴリズムを比較中...",
+  "compare_chart_title": "アルゴリズム比較",
+  "no_pytorch": "PyTorchが見つかりません。Q学習のみのモード。"
+}

@@ -1,0 +1,124 @@
+# ============================================================
+# AI Virtual World — settings.yaml
+# File cấu hình toàn cục. Chỉnh sửa ở đây mà không cần
+# sửa code Python. Restart để áp dụng.
+# ============================================================
+
+language: "vi"   # Ngôn ngữ giao diện: "vi" | "en" | "zh" | "ja"
+
+# ── Thế giới ảo ────────────────────────────────────────────
+world:
+  width: 30
+  height: 30
+  cell_size: 24
+  num_food: 40
+  num_hazards: 15
+  num_obstacles: 30
+  food_respawn_rate: 0.03
+  max_steps: 1000
+
+# ── Agent ──────────────────────────────────────────────────
+agent:
+  num_agents: 6         # Tổng số agents (chia đều cho các thuật toán)
+  max_energy: 100.0
+  energy_decay: 0.3
+  energy_food: 25.0
+  sensor_range: 5
+
+  # Reward shaping
+  reward_food: 10.0
+  reward_hazard: -5.0
+  reward_death: -20.0
+  reward_step: -0.1
+  reward_survive_bonus: 50.0
+
+  # Danh sách thuật toán dùng (từ: q_learning, dqn, sarsa, ppo, a2c)
+  algorithms:
+    - q_learning
+    - dqn
+    - sarsa
+    - ppo
+    - a2c
+
+# ── Q-Learning ─────────────────────────────────────────────
+q_learning:
+  alpha: 0.1
+  gamma: 0.95
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 0.995
+
+# ── SARSA (On-policy TD) ───────────────────────────────────
+sarsa:
+  alpha: 0.1
+  gamma: 0.95
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 0.995
+
+# ── DQN ────────────────────────────────────────────────────
+dqn:
+  lr: 0.001
+  gamma: 0.99
+  epsilon_start: 1.0
+  epsilon_end: 0.01
+  epsilon_decay: 0.995
+  batch_size: 64
+  memory_size: 50000
+  target_update_freq: 100
+  hidden_dim: 128
+  num_hidden_layers: 3
+  use_double_dqn: true
+  use_dueling: true
+  use_per: true            # Prioritized Experience Replay
+
+# ── PPO (Proximal Policy Optimization) ────────────────────
+ppo:
+  lr_actor: 0.0003
+  lr_critic: 0.001
+  gamma: 0.99
+  gae_lambda: 0.95         # GAE lambda
+  clip_ratio: 0.2          # PPO clip ratio
+  epochs_per_update: 4     # Số lần cập nhật mỗi rollout
+  rollout_steps: 256       # Steps trước mỗi update
+  entropy_coef: 0.01       # Entropy bonus (khuyến khích explore)
+  hidden_dim: 128
+
+# ── A2C (Advantage Actor-Critic) ──────────────────────────
+a2c:
+  lr: 0.0007
+  gamma: 0.99
+  entropy_coef: 0.01
+  value_loss_coef: 0.5
+  max_grad_norm: 0.5
+  n_steps: 5               # n-step returns
+  hidden_dim: 128
+
+# ── Training ───────────────────────────────────────────────
+training:
+  num_episodes: 2000
+  save_every: 100
+  log_every: 10
+  model_dir: "models"
+  log_dir: "logs"
+
+# ── Visualization ──────────────────────────────────────────
+visualization:
+  fps: 30
+  show_sensors: true
+  show_trails: true
+  trail_length: 20
+  fullscreen: false
+
+# ── Dashboard ──────────────────────────────────────────────
+dashboard:
+  host: "0.0.0.0"
+  port: 5000
+
+# ── Màu sắc agents (RGB) ───────────────────────────────────
+agent_colors:
+  q_learning: [99, 102, 241]    # Tím
+  sarsa:      [56, 189, 248]    # Xanh biển
+  dqn:        [251, 191, 36]    # Vàng
+  ppo:        [16, 185, 129]    # Xanh lá
+  a2c:        [244, 63, 94]     # Đỏ hồng

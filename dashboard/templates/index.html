@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ t('app_title') }}</title>
+  <meta name="description" content="AI Virtual World Dashboard" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script>
+    // Pass translations to JS
+    window.I18N = {
+      status_active: "{{ t('status_active') }}",
+      status_waiting: "{{ t('status_waiting') }}",
+      agent_energy: "{{ t('agent_energy') }}",
+      agent_food: "{{ t('agent_food') }}",
+      agent_score: "{{ t('agent_score') }}",
+      agent_epsilon: "{{ t('agent_epsilon') }}",
+      agent_steps: "{{ t('agent_steps') }}",
+      agent_reward: "{{ t('agent_reward') }}"
+    };
+  </script>
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-icon">🤖</div>
+      <div>
+        <h1 class="header-title">{{ t('app_title') }}</h1>
+        <p class="header-sub">{{ t('app_subtitle') }}</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <select id="lang-select" onchange="changeLang(this.value)">
+        {% for code, name in lang_menu %}
+        <option value="{{ code }}" {% if code == lang %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <div class="status-badge" id="status-badge">
+        <span class="status-dot"></span>
+        <span id="status-text">{{ t('status_connecting') }}</span>
+      </div>
+      <div class="episode-counter">
+        <span class="ep-label">{{ t('metric_episode') }}</span>
+        <span class="ep-value" id="ep-value">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- METRICS ROW -->
+    <section class="metrics-row">
+      <div class="metric-card" id="mc-episode">
+        <div class="metric-icon">📺</div>
+        <div>
+          <div class="metric-label">{{ t('metric_episode') }}</div>
+          <div class="metric-value" id="m-episode">0</div>
+        </div>
+      </div>
+      <div class="metric-card" id="mc-food">
+        <div class="metric-icon">🍎</div>
+        <div>
+          <div class="metric-label">{{ t('metric_food') }}</div>
+          <div class="metric-value" id="m-food">—</div>
+        </div>
+      </div>
+      <div class="metric-card" id="mc-step">
+        <div class="metric-icon">⏱</div>
+        <div>
+          <div class="metric-label">{{ t('metric_step') }}</div>
+          <div class="metric-value" id="m-step">—</div>
+        </div>
+      </div>
+      <div class="metric-card" id="mc-eaten">
+        <div class="metric-icon">🏆</div>
+        <div>
+          <div class="metric-label">{{ t('metric_eaten') }}</div>
+          <div class="metric-value" id="m-eaten">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHARTS ROW -->
+    <section class="charts-row">
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>📈 {{ t('chart_reward') }}</h3>
+          <div class="legend" id="legend-reward"></div>
+        </div>
+        <canvas id="chart-reward"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>🍎 {{ t('chart_food') }}</h3>
+          <div class="legend" id="legend-food"></div>
+        </div>
+        <canvas id="chart-food"></canvas>
+      </div>
+    </section>
+
+    <!-- AGENTS TABLE -->
+    <section class="agents-section">
+      <h3 class="section-title">🤖 {{ t('section_agents') }}</h3>
+      <div class="agents-grid" id="agents-grid">
+        <div class="agent-placeholder">{{ t('status_waiting') }}</div>
+      </div>
+    </section>
+
+    <!-- INFO FOOTER -->
+    <section class="info-bar">
+      <div class="info-item">
+        <span class="info-label">{{ t('info_algorithm') }}</span>
+        <span class="info-val">Q-Learning, SARSA, DQN, PPO, A2C</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">{{ t('info_state_dim') }}</span>
+        <span class="info-val">{{ t('info_state_val') }}</span>
+      </div>
+      <div class="info-item">
+        <span class="info-label">{{ t('info_action_space') }}</span>
+        <span class="info-val">{{ t('info_action_val') }}</span>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+  <script>
+    function changeLang(lang) {
+        fetch(`/api/lang/${lang}`).then(res => res.json()).then(data => {
+            if (data.success) window.location.reload();
+        });
+    }
+  </script>
+</body>
+</html>
