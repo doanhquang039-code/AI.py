@@ -1,0 +1,156 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+ENV/
+env/
+
+# PyTorch
+*.pt
+*.pth
+*.ckpt
+
+# NumPy
+*.npy
+*.npz
+
+# Logs
+logs/*.jsonl
+logs/*.log
+*.log
+
+# Models
+models/*.pt
+models/*.npy
+models/*.pth
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Angular
+frontend/dist/
+frontend/.angular/
+frontend/node_modules/
+frontend/coverage/
+frontend/.sass-cache/
+frontend/connect.lock
+frontend/typings/
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.env
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Backup files
+*.bak
+*.backup
+*_backup_*
+*.old
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Archives
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Documentation build
+docs/_build/
+site/
+
+# Cache
+.cache/
+*.cache
+
+# Local configuration
+config/local.yaml
+config/local.json
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+google-drive-service-account.json
+
+# Large files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+
+# Generated files
+training_stats.png
+comparison.png

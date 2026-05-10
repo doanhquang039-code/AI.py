@@ -1,0 +1,209 @@
+<div class="export-import-container">
+  <div class="header">
+    <h2>💾 Export / Import Manager</h2>
+    <p class="subtitle">Backup and restore your AI models, training logs, and configurations</p>
+  </div>
+
+  <div class="main-grid">
+    <!-- Export Section -->
+    <div class="section export-section">
+      <div class="section-header">
+        <h3>📤 Export Data</h3>
+        <p>Select what you want to export</p>
+      </div>
+
+      <div class="export-options">
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="exportConfig.includeModels">
+          <span class="checkbox-text">
+            <strong>Include Models</strong>
+            <small>Export all trained AI models</small>
+          </span>
+        </label>
+
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="exportConfig.includeTrainingLogs">
+          <span class="checkbox-text">
+            <strong>Include Training Logs</strong>
+            <small>Export training history and metrics</small>
+          </span>
+        </label>
+
+        <label class="checkbox-label">
+          <input type="checkbox" [(ngModel)]="exportConfig.includeConfigs">
+          <span class="checkbox-text">
+            <strong>Include Configurations</strong>
+            <small>Export system settings and parameters</small>
+          </span>
+        </label>
+
+        <div class="format-selector">
+          <label>Export Format:</label>
+          <select [(ngModel)]="exportConfig.format" class="format-select">
+            <option value="json">JSON</option>
+            <option value="zip">ZIP Archive</option>
+          </select>
+        </div>
+      </div>
+
+      <button 
+        class="btn btn-primary btn-large"
+        (click)="exportData()"
+        [disabled]="isExporting || (!exportConfig.includeModels && !exportConfig.includeTrainingLogs && !exportConfig.includeConfigs)">
+        <span *ngIf="!isExporting">📥 Export Now</span>
+        <span *ngIf="isExporting">⏳ Exporting... {{ exportProgress }}%</span>
+      </button>
+
+      <div class="progress-bar" *ngIf="isExporting">
+        <div class="progress-fill" [style.width.%]="exportProgress"></div>
+      </div>
+
+      <!-- Export History -->
+      <div class="history-section" *ngIf="exportHistory.length > 0">
+        <div class="history-header">
+          <h4>Recent Exports</h4>
+          <button class="btn-link" (click)="clearExportHistory()">Clear History</button>
+        </div>
+        <div class="history-list">
+          <div class="history-item" *ngFor="let item of exportHistory">
+            <div class="history-icon">📦</div>
+            <div class="history-info">
+              <div class="history-filename">{{ item.filename }}</div>
+              <div class="history-meta">
+                {{ formatDate(item.timestamp) }} • {{ formatFileSize(item.size) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Section -->
+    <div class="section import-section">
+      <div class="section-header">
+        <h3>📥 Import Data</h3>
+        <p>Upload exported files to restore data</p>
+      </div>
+
+      <div class="upload-area">
+        <input 
+          type="file" 
+          id="fileInput" 
+          (change)="onFileSelected($event)"
+          accept=".json,.zip"
+          multiple
+          hidden>
+        <label for="fileInput" class="upload-label">
+          <div class="upload-icon">📁</div>
+          <div class="upload-text">
+            <strong>Click to select files</strong>
+            <small>or drag and drop here</small>
+          </div>
+          <div class="upload-hint">Supports JSON and ZIP files</div>
+        </label>
+      </div>
+
+      <div class="selected-files" *ngIf="importedFiles.length > 0">
+        <h4>Selected Files ({{ importedFiles.length }})</h4>
+        <div class="file-list">
+          <div class="file-item" *ngFor="let file of importedFiles; let i = index">
+            <div class="file-icon">📄</div>
+            <div class="file-info">
+              <div class="file-name">{{ file.name }}</div>
+              <div class="file-size">{{ formatFileSize(file.size) }}</div>
+            </div>
+            <button class="btn-remove" (click)="removeImportedFile(i)">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="import-actions">
+        <button 
+          class="btn btn-success btn-large"
+          (click)="importData()"
+          [disabled]="isImporting || importedFiles.length === 0">
+          <span *ngIf="!isImporting">📤 Import Now</span>
+          <span *ngIf="isImporting">⏳ Importing... {{ importProgress.toFixed(0) }}%</span>
+        </button>
+
+        <button 
+          class="btn btn-secondary"
+          (click)="downloadTemplate()">
+          📋 Download Template
+        </button>
+      </div>
+
+      <div class="progress-bar" *ngIf="isImporting">
+        <div class="progress-fill" [style.width.%]="importProgress"></div>
+      </div>
+
+      <!-- Import History -->
+      <div class="history-section" *ngIf="importHistory.length > 0">
+        <div class="history-header">
+          <h4>Recent Imports</h4>
+          <button class="btn-link" (click)="clearImportHistory()">Clear History</button>
+        </div>
+        <div class="history-list">
+          <div class="history-item" *ngFor="let item of importHistory">
+            <div class="history-icon">📥</div>
+            <div class="history-info">
+              <div class="history-filename">{{ item.filename }}</div>
+              <div class="history-meta">
+                {{ formatDate(item.timestamp) }} • {{ formatFileSize(item.size) }}
+              </div>
+              <div class="history-details" *ngIf="item.itemsImported">
+                <span *ngIf="item.itemsImported.models > 0">
+                  {{ item.itemsImported.models }} models
+                </span>
+                <span *ngIf="item.itemsImported.logs > 0">
+                  {{ item.itemsImported.logs }} logs
+                </span>
+                <span *ngIf="item.itemsImported.configs > 0">
+                  {{ item.itemsImported.configs }} config
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info Panel -->
+  <div class="info-panel">
+    <h3>ℹ️ Important Information</h3>
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="info-icon">🔒</div>
+        <div class="info-content">
+          <h4>Data Security</h4>
+          <p>All exports are stored locally. No data is sent to external servers.</p>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-icon">📦</div>
+        <div class="info-content">
+          <h4>File Format</h4>
+          <p>Exports use JSON format for easy inspection and compatibility.</p>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-icon">🔄</div>
+        <div class="info-content">
+          <h4>Version Control</h4>
+          <p>Each export includes version information for compatibility checking.</p>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-icon">💡</div>
+        <div class="info-content">
+          <h4>Best Practices</h4>
+          <p>Regular backups help prevent data loss during experiments.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

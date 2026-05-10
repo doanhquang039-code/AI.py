@@ -1,0 +1,79 @@
+<div class="visualization-container">
+  <div class="header">
+    <h2>🎮 Real-time Training Visualization</h2>
+    <div class="status">
+      <span class="status-indicator" [class.connected]="isConnected"></span>
+      <span>{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
+    </div>
+  </div>
+
+  <div class="canvas-wrapper">
+    <canvas #canvas></canvas>
+  </div>
+
+  <div class="controls">
+    <button (click)="togglePause()" class="btn" [class.active]="isPaused">
+      <span>{{ isPaused ? '▶️ Resume' : '⏸️ Pause' }}</span>
+    </button>
+    
+    <button (click)="toggleSensors()" class="btn" [class.active]="showSensors">
+      <span>📡 Sensors</span>
+    </button>
+    
+    <button (click)="toggleTrails()" class="btn" [class.active]="showTrails">
+      <span>🎨 Trails</span>
+    </button>
+    
+    <button (click)="clearTrails()" class="btn">
+      <span>🧹 Clear Trails</span>
+    </button>
+    
+    <button (click)="resetView()" class="btn">
+      <span>🔄 Reset View</span>
+    </button>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-icon food"></div>
+      <span>Food (+10)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-icon hazard"></div>
+      <span>Hazard (-5)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-icon obstacle"></div>
+      <span>Obstacle</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-icon agent"></div>
+      <span>Agent</span>
+    </div>
+  </div>
+
+  <div class="info-panel" *ngIf="worldState">
+    <h3>Agent Status</h3>
+    <div class="agent-list">
+      <div class="agent-item" *ngFor="let agent of worldState.agents">
+        <div class="agent-color" [style.background-color]="agent.color"></div>
+        <div class="agent-info">
+          <span class="agent-id">Agent {{ agent.id }}</span>
+          <span class="agent-status" [class.dead]="!agent.alive">
+            {{ agent.alive ? '✅ Alive' : '💀 Dead' }}
+          </span>
+        </div>
+        <div class="agent-stats">
+          <div class="stat">
+            <span class="stat-label">Energy:</span>
+            <span class="stat-value">{{ agent.energy.toFixed(1) }}%</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Reward:</span>
+            <span class="stat-value">{{ agent.reward.toFixed(2) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,180 @@
+<div class="comparison-container">
+  <div class="header">
+    <h2>📊 Model Comparison Tool</h2>
+    <p class="subtitle">Compare performance metrics across different AI models</p>
+  </div>
+
+  <div class="selection-panel">
+    <h3>Select Models to Compare (2-5 models)</h3>
+    <div class="model-grid">
+      <div 
+        *ngFor="let model of availableModels" 
+        class="model-card"
+        [class.selected]="isModelSelected(model.name)"
+        (click)="toggleModelSelection(model.name)">
+        <div class="model-header">
+          <span class="model-name">{{ model.name }}</span>
+          <span class="model-algorithm">{{ model.algorithm }}</span>
+        </div>
+        <div class="model-info">
+          <div class="info-item">
+            <span class="label">Episodes:</span>
+            <span class="value">{{ model.episodes }}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Size:</span>
+            <span class="value">{{ (model.size / 1024).toFixed(2) }} KB</span>
+          </div>
+        </div>
+        <div class="selection-indicator" *ngIf="isModelSelected(model.name)">
+          ✓ Selected
+        </div>
+      </div>
+    </div>
+
+    <div class="action-buttons">
+      <button 
+        class="btn btn-primary" 
+        (click)="compareModels()"
+        [disabled]="selectedModels.length < 2 || isLoading">
+        <span *ngIf="!isLoading">🔍 Compare Models</span>
+        <span *ngIf="isLoading">⏳ Loading...</span>
+      </button>
+      <button 
+        class="btn btn-secondary" 
+        (click)="clearSelection()"
+        [disabled]="selectedModels.length === 0">
+        🗑️ Clear Selection
+      </button>
+    </div>
+  </div>
+
+  <div class="results-panel" *ngIf="comparisonData.length > 0">
+    <h3>Comparison Results</h3>
+
+    <!-- Summary Table -->
+    <div class="summary-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Algorithm</th>
+            <th>Episodes</th>
+            <th>Avg Reward</th>
+            <th>Max Reward</th>
+            <th>Avg Loss</th>
+            <th>Training Time</th>
+            <th>Memory</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let model of comparisonData">
+            <td class="model-name-cell">{{ model.name }}</td>
+            <td>
+              <span class="algorithm-badge">{{ model.algorithm }}</span>
+            </td>
+            <td>{{ model.episodes }}</td>
+            <td class="highlight">{{ model.avgReward.toFixed(2) }}</td>
+            <td>{{ model.maxReward.toFixed(2) }}</td>
+            <td>{{ model.avgLoss.toFixed(4) }}</td>
+            <td>{{ formatTime(model.trainingTime) }}</td>
+            <td>{{ formatMemory(model.memoryUsage) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="chart-container">
+        <canvas 
+          baseChart
+          [data]="rewardChartData"
+          [options]="rewardChartOptions"
+          type="line">
+        </canvas>
+      </div>
+
+      <div class="chart-container">
+        <canvas 
+          baseChart
+          [data]="lossChartData"
+          [options]="lossChartOptions"
+          type="line">
+        </canvas>
+      </div>
+
+      <div class="chart-container full-width">
+        <canvas 
+          baseChart
+          [data]="performanceChartData"
+          [options]="performanceChartOptions"
+          type="bar">
+        </canvas>
+      </div>
+    </div>
+
+    <!-- Export Button -->
+    <div class="export-section">
+      <button class="btn btn-success" (click)="exportComparison()">
+        💾 Export Comparison Data
+      </button>
+    </div>
+
+    <!-- Insights -->
+    <div class="insights-panel">
+      <h4>📈 Key Insights</h4>
+      <div class="insights-grid">
+        <div class="insight-card">
+          <div class="insight-icon">🏆</div>
+          <div class="insight-content">
+            <h5>Best Average Reward</h5>
+            <p>{{ comparisonData.reduce((prev, curr) => prev.avgReward > curr.avgReward ? prev : curr).name }}</p>
+            <span class="insight-value">
+              {{ comparisonData.reduce((prev, curr) => prev.avgReward > curr.avgReward ? prev : curr).avgReward.toFixed(2) }}
+            </span>
+          </div>
+        </div>
+
+        <div class="insight-card">
+          <div class="insight-icon">⚡</div>
+          <div class="insight-content">
+            <h5>Fastest Training</h5>
+            <p>{{ comparisonData.reduce((prev, curr) => prev.trainingTime < curr.trainingTime ? prev : curr).name }}</p>
+            <span class="insight-value">
+              {{ formatTime(comparisonData.reduce((prev, curr) => prev.trainingTime < curr.trainingTime ? prev : curr).trainingTime) }}
+            </span>
+          </div>
+        </div>
+
+        <div class="insight-card">
+          <div class="insight-icon">💾</div>
+          <div class="insight-content">
+            <h5>Most Memory Efficient</h5>
+            <p>{{ comparisonData.reduce((prev, curr) => prev.memoryUsage < curr.memoryUsage ? prev : curr).name }}</p>
+            <span class="insight-value">
+              {{ formatMemory(comparisonData.reduce((prev, curr) => prev.memoryUsage < curr.memoryUsage ? prev : curr).memoryUsage) }}
+            </span>
+          </div>
+        </div>
+
+        <div class="insight-card">
+          <div class="insight-icon">📉</div>
+          <div class="insight-content">
+            <h5>Lowest Loss</h5>
+            <p>{{ comparisonData.reduce((prev, curr) => prev.avgLoss < curr.avgLoss ? prev : curr).name }}</p>
+            <span class="insight-value">
+              {{ comparisonData.reduce((prev, curr) => prev.avgLoss < curr.avgLoss ? prev : curr).avgLoss.toFixed(4) }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="empty-state" *ngIf="comparisonData.length === 0 && !isLoading">
+    <div class="empty-icon">📊</div>
+    <h3>No Comparison Yet</h3>
+    <p>Select at least 2 models and click "Compare Models" to see the results</p>
+  </div>
+</div>

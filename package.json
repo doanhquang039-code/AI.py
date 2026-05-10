@@ -1,0 +1,48 @@
+{
+  "name": "ai-virtual-world",
+  "version": "2.0.0",
+  "description": "AI Virtual World - Research Project with Angular Frontend & FastAPI Backend",
+  "scripts": {
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd . && python -m uvicorn api.main:app --reload --port 8000",
+    "start:frontend": "cd frontend && npm start",
+    "build:frontend": "cd frontend && npm run build",
+    "test:backend": "pytest",
+    "test:frontend": "cd frontend && npm test",
+    "install:all": "pip install -r requirements.txt && cd frontend && npm install",
+    "clean": "rm -rf frontend/node_modules frontend/dist logs/*.jsonl models/*.pt models/*.npy",
+    "train": "python main.py --mode train --episodes 100",
+    "train:visual": "python main.py --mode visual --episodes 50",
+    "train:compare": "python main.py --mode compare --episodes 100",
+    "dashboard": "python main.py --mode dashboard",
+    "lint:frontend": "cd frontend && ng lint",
+    "format": "black . && cd frontend && npm run format"
+  },
+  "keywords": [
+    "ai",
+    "reinforcement-learning",
+    "dqn",
+    "q-learning",
+    "angular",
+    "fastapi",
+    "machine-learning",
+    "pytorch"
+  ],
+  "author": "AI Research Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.8.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ai-virtual-world.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/ai-virtual-world/issues"
+  },
+  "homepage": "https://github.com/yourusername/ai-virtual-world#readme"
+}
