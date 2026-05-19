@@ -9,7 +9,10 @@ from datetime import datetime
 import numpy as np
 import asyncio
 import io
-from websocket_handler import manager
+try:
+    from .websocket_handler import manager
+except ImportError:
+    from websocket_handler import manager
 
 app = FastAPI(
     title="AI Dashboard API - Enhanced",

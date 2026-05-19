@@ -129,9 +129,9 @@
           <div class="insight-icon">🏆</div>
           <div class="insight-content">
             <h5>Best Average Reward</h5>
-            <p>{{ comparisonData.reduce((prev, curr) => prev.avgReward > curr.avgReward ? prev : curr).name }}</p>
+            <p>{{ bestRewardModel?.name }}</p>
             <span class="insight-value">
-              {{ comparisonData.reduce((prev, curr) => prev.avgReward > curr.avgReward ? prev : curr).avgReward.toFixed(2) }}
+              {{ bestRewardModel?.avgReward?.toFixed(2) }}
             </span>
           </div>
         </div>
@@ -140,9 +140,9 @@
           <div class="insight-icon">⚡</div>
           <div class="insight-content">
             <h5>Fastest Training</h5>
-            <p>{{ comparisonData.reduce((prev, curr) => prev.trainingTime < curr.trainingTime ? prev : curr).name }}</p>
+            <p>{{ fastestTrainingModel?.name }}</p>
             <span class="insight-value">
-              {{ formatTime(comparisonData.reduce((prev, curr) => prev.trainingTime < curr.trainingTime ? prev : curr).trainingTime) }}
+              {{ formatTime(fastestTrainingModel?.trainingTime || 0) }}
             </span>
           </div>
         </div>
@@ -151,9 +151,9 @@
           <div class="insight-icon">💾</div>
           <div class="insight-content">
             <h5>Most Memory Efficient</h5>
-            <p>{{ comparisonData.reduce((prev, curr) => prev.memoryUsage < curr.memoryUsage ? prev : curr).name }}</p>
+            <p>{{ mostMemoryEfficientModel?.name }}</p>
             <span class="insight-value">
-              {{ formatMemory(comparisonData.reduce((prev, curr) => prev.memoryUsage < curr.memoryUsage ? prev : curr).memoryUsage) }}
+              {{ formatMemory(mostMemoryEfficientModel?.memoryUsage || 0) }}
             </span>
           </div>
         </div>
@@ -162,9 +162,9 @@
           <div class="insight-icon">📉</div>
           <div class="insight-content">
             <h5>Lowest Loss</h5>
-            <p>{{ comparisonData.reduce((prev, curr) => prev.avgLoss < curr.avgLoss ? prev : curr).name }}</p>
+            <p>{{ lowestLossModel?.name }}</p>
             <span class="insight-value">
-              {{ comparisonData.reduce((prev, curr) => prev.avgLoss < curr.avgLoss ? prev : curr).avgLoss.toFixed(4) }}
+              {{ lowestLossModel?.avgLoss?.toFixed(4) }}
             </span>
           </div>
         </div>

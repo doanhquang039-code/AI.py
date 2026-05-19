@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ModelService } from '../../services/model.service';
-import { BaseChartDirective } from 'ng2-charts';
+import { NgChartsModule } from 'ng2-charts';
 import { ChartConfiguration } from 'chart.js';
 
 interface ModelComparison {
@@ -19,7 +19,7 @@ interface ModelComparison {
 @Component({
   selector: 'app-comparison',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective],
+  imports: [CommonModule, FormsModule, NgChartsModule],
   templateUrl: './comparison.component.html',
   styleUrls: ['./comparison.component.scss']
 })
@@ -258,6 +258,30 @@ export class ComparisonComponent implements OnInit {
       `rgba(255, 87, 34, ${alpha})`     // Orange
     ];
     return colors[index % colors.length];
+  }
+
+  get bestRewardModel(): ModelComparison | null {
+    return this.findBestModel((best, current) => current.avgReward > best.avgReward);
+  }
+
+  get fastestTrainingModel(): ModelComparison | null {
+    return this.findBestModel((best, current) => current.trainingTime < best.trainingTime);
+  }
+
+  get mostMemoryEfficientModel(): ModelComparison | null {
+    return this.findBestModel((best, current) => current.memoryUsage < best.memoryUsage);
+  }
+
+  get lowestLossModel(): ModelComparison | null {
+    return this.findBestModel((best, current) => current.avgLoss < best.avgLoss);
+  }
+
+  private findBestModel(isBetter: (best: ModelComparison, current: ModelComparison) => boolean): ModelComparison | null {
+    if (this.comparisonData.length === 0) {
+      return null;
+    }
+
+    return this.comparisonData.reduce((best, current) => isBetter(best, current) ? current : best);
   }
 
   clearSelection(): void {

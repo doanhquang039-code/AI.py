@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { WebsocketService } from '../../services/websocket.service';
+import { WebSocketService } from '../../services/websocket.service';
 import { Subscription } from 'rxjs';
 
 interface Agent {
@@ -51,7 +51,7 @@ export class VisualizationComponent implements OnInit, OnDestroy {
   private trails: Map<number, { x: number; y: number }[]> = new Map();
   private readonly MAX_TRAIL_LENGTH = 50;
 
-  constructor(private wsService: WebsocketService) {}
+  constructor(private wsService: WebSocketService) {}
 
   ngOnInit(): void {
     this.initCanvas();
@@ -78,7 +78,8 @@ export class VisualizationComponent implements OnInit, OnDestroy {
   }
 
   private connectWebSocket(): void {
-    this.subscription = this.wsService.connect('ws://localhost:8000/ws/training').subscribe({
+    this.wsService.connect();
+    this.subscription = this.wsService.messages$.subscribe({
       next: (data: any) => {
         this.isConnected = true;
         if (data.type === 'world_state') {
