@@ -517,7 +517,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
 
   loadDetailedStats() {
     this.loading = true;
-    this.apiService.get<any>('api/stats/detailed').subscribe({
+    this.apiService.get<any>('stats/detailed').subscribe({
       next: (data) => {
         this.detailedStats = data;
         this.updateCharts();
