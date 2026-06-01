@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
 import os
+from pathlib import Path
 from datetime import datetime
 import numpy as np
 import asyncio
@@ -65,6 +66,8 @@ training_sessions = {}
 models_cache = []
 active_websockets: List[WebSocket] = []
 experiments = {}
+MODELS_DIR = Path("models")
+ALLOWED_MODEL_EXTENSIONS = {".pt", ".npy"}
 
 # WebSocket Manager
 class ConnectionManager:
@@ -87,6 +90,18 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+
+def resolve_model_path(model_name: str) -> Path:
+    """Return a safe model path inside the models directory."""
+    safe_name = os.path.basename(model_name or "")
+    if (
+        not safe_name
+        or safe_name != model_name
+        or Path(safe_name).suffix.lower() not in ALLOWED_MODEL_EXTENSIONS
+    ):
+        raise HTTPException(status_code=400, detail="Invalid model filename")
+
+    return MODELS_DIR / safe_name
 
 @app.get("/")
 async def root():
@@ -196,13 +211,15 @@ async def get_training_history():
 @app.get("/api/models")
 async def get_models():
     """Get list of trained models"""
-    models_dir = "models"
     models = []
     
-    if os.path.exists(models_dir):
-        for filename in os.listdir(models_dir):
-            filepath = os.path.join(models_dir, filename)
-            file_size = os.path.getsize(filepath)
+    if MODELS_DIR.exists():
+        for filepath in MODELS_DIR.iterdir():
+            if not filepath.is_file() or filepath.suffix.lower() not in ALLOWED_MODEL_EXTENSIONS:
+                continue
+
+            filename = filepath.name
+            file_size = filepath.stat().st_size
             
             # Parse filename: algorithm_agentX_epY.ext
             parts = filename.replace('.pt', '').replace('.npy', '').split('_')
@@ -213,7 +230,7 @@ async def get_models():
                 "agent_id": parts[1] if len(parts) > 1 else "0",
                 "episodes": parts[2] if len(parts) > 2 else "0",
                 "size": file_size,
-                "created_at": datetime.fromtimestamp(os.path.getctime(filepath)).isoformat(),
+                "created_at": datetime.fromtimestamp(filepath.stat().st_ctime).isoformat(),
                 "performance": {
                     "accuracy": np.random.uniform(0.7, 0.95),
                     "reward": np.random.uniform(50, 100)
@@ -225,13 +242,13 @@ async def get_models():
 @app.delete("/api/models/{model_name}")
 async def delete_model(model_name: str):
     """Delete a trained model"""
-    filepath = os.path.join("models", model_name)
+    filepath = resolve_model_path(model_name)
     
-    if not os.path.exists(filepath):
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Model not found")
     
     try:
-        os.remove(filepath)
+        filepath.unlink()
         return {"message": f"Model {model_name} deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -239,38 +256,35 @@ async def delete_model(model_name: str):
 @app.get("/api/models/export/{model_name}")
 async def export_model(model_name: str):
     """Export a model file."""
-    filepath = os.path.join("models", model_name)
-    if not os.path.exists(filepath):
+    filepath = resolve_model_path(model_name)
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Model not found")
 
-    return FileResponse(filepath, media_type="application/octet-stream", filename=model_name)
+    return FileResponse(str(filepath), media_type="application/octet-stream", filename=model_name)
 
 @app.post("/api/models/import")
 async def import_model(file: UploadFile = File(...)):
     """Import a model file into the models directory."""
-    os.makedirs("models", exist_ok=True)
+    MODELS_DIR.mkdir(exist_ok=True)
     safe_filename = os.path.basename(file.filename or "")
-    if not safe_filename:
-        raise HTTPException(status_code=400, detail="Filename is required")
+    filepath = resolve_model_path(safe_filename)
 
-    filepath = os.path.join("models", safe_filename)
-    with open(filepath, "wb") as output:
+    with filepath.open("wb") as output:
         shutil.copyfileobj(file.file, output)
 
     return {
         "message": f"Model {safe_filename} imported successfully",
         "filename": safe_filename,
-        "size": os.path.getsize(filepath)
+        "size": filepath.stat().st_size
     }
 
 @app.post("/api/models/compare")
 async def compare_models(comparison: ModelComparison):
     """Compare two saved model files using lightweight metadata and demo metrics."""
-    models_dir = "models"
-    model1_path = os.path.join(models_dir, comparison.model1)
-    model2_path = os.path.join(models_dir, comparison.model2)
+    model1_path = resolve_model_path(comparison.model1)
+    model2_path = resolve_model_path(comparison.model2)
 
-    if not os.path.exists(model1_path) or not os.path.exists(model2_path):
+    if not model1_path.exists() or not model2_path.exists():
         raise HTTPException(status_code=404, detail="One or both models not found")
 
     model1_score = float(np.random.uniform(0.70, 0.96))
@@ -279,13 +293,13 @@ async def compare_models(comparison: ModelComparison):
     return {
         "model1": {
             "name": comparison.model1,
-            "size": os.path.getsize(model1_path),
+            "size": model1_path.stat().st_size,
             "score": round(model1_score, 3),
             "avg_reward": round(float(np.random.uniform(45, 100)), 2)
         },
         "model2": {
             "name": comparison.model2,
-            "size": os.path.getsize(model2_path),
+            "size": model2_path.stat().st_size,
             "score": round(model2_score, 3),
             "avg_reward": round(float(np.random.uniform(45, 100)), 2)
         },
@@ -296,8 +310,8 @@ async def compare_models(comparison: ModelComparison):
 @app.post("/api/models/evaluate/{model_name}")
 async def evaluate_model(model_name: str, test_episodes: int = 10):
     """Evaluate a saved model with demo metrics."""
-    filepath = os.path.join("models", model_name)
-    if not os.path.exists(filepath):
+    filepath = resolve_model_path(model_name)
+    if not filepath.exists():
         raise HTTPException(status_code=404, detail="Model not found")
 
     rewards = [float(np.random.uniform(30, 100)) for _ in range(max(1, test_episodes))]

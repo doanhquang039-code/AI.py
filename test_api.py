@@ -6,15 +6,33 @@ Run this to verify all endpoints are working
 import requests
 import json
 from datetime import datetime
+from fastapi.testclient import TestClient
+
+from api.main import app
 
 BASE_URL = "http://localhost:8000"
+client = TestClient(app)
 
 def print_section(title):
     print("\n" + "="*60)
     print(f"  {title}")
     print("="*60)
 
-def test_endpoint(method, endpoint, data=None, description=""):
+def test_health_endpoint():
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+
+def test_invalid_model_filename_is_rejected():
+    response = client.post(
+        "/api/models/compare",
+        json={"model1": "../outside.pt", "model2": "model.pt"},
+    )
+    assert response.status_code == 400
+
+
+def run_endpoint(method, endpoint, data=None, description=""):
     """Test a single API endpoint"""
     url = f"{BASE_URL}{endpoint}"
     print(f"\n🔍 Testing: {method} {endpoint}")
@@ -55,12 +73,12 @@ def main():
     
     # Test 1: Health Check
     print_section("1. Health Check")
-    test_endpoint("GET", "/", description="Root endpoint")
-    test_endpoint("GET", "/api/health", description="Health check endpoint")
+    run_endpoint("GET", "/", description="Root endpoint")
+    run_endpoint("GET", "/api/health", description="Health check endpoint")
     
     # Test 2: Training Endpoints
     print_section("2. Training Endpoints")
-    test_endpoint("GET", "/api/training/status", description="Get training status")
+    run_endpoint("GET", "/api/training/status", description="Get training status")
     
     # Start training
     training_config = {
@@ -70,7 +88,7 @@ def main():
         "gamma": 0.99,
         "epsilon": 0.1
     }
-    result = test_endpoint(
+    result = run_endpoint(
         "POST", 
         "/api/training/start", 
         data=training_config,
@@ -83,11 +101,11 @@ def main():
         print(f"   Session ID: {session_id}")
     
     # Get training history
-    test_endpoint("GET", "/api/training/history", description="Get training history")
+    run_endpoint("GET", "/api/training/history", description="Get training history")
     
     # Stop training if session exists
     if session_id:
-        test_endpoint(
+        run_endpoint(
             "POST", 
             f"/api/training/stop/{session_id}",
             description="Stop training session"
@@ -95,16 +113,16 @@ def main():
     
     # Test 3: Model Endpoints
     print_section("3. Model Endpoints")
-    models = test_endpoint("GET", "/api/models", description="Get all models")
+    models = run_endpoint("GET", "/api/models", description="Get all models")
     
     # Test 4: Statistics Endpoints
     print_section("4. Statistics Endpoints")
-    test_endpoint("GET", "/api/stats/summary", description="Get summary statistics")
-    test_endpoint("GET", "/api/stats/performance", description="Get performance stats")
+    run_endpoint("GET", "/api/stats/summary", description="Get summary statistics")
+    run_endpoint("GET", "/api/stats/performance", description="Get performance stats")
     
     # Test 5: Algorithm Endpoints
     print_section("5. Algorithm Endpoints")
-    algorithms = test_endpoint("GET", "/api/algorithms", description="Get available algorithms")
+    algorithms = run_endpoint("GET", "/api/algorithms", description="Get available algorithms")
     
     if algorithms and "algorithms" in algorithms:
         print(f"\n   Available Algorithms:")

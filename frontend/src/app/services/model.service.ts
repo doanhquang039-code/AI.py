@@ -14,7 +14,7 @@ export class ModelService {
   }
 
   deleteModel(modelName: string): Observable<any> {
-    return this.api.delete(`models/${modelName}`);
+    return this.api.delete(`models/${encodeURIComponent(modelName)}`);
   }
 
   getExportUrl(modelName: string): string {

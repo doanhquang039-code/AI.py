@@ -10,6 +10,7 @@
     "build:frontend": "cd frontend && npm run build",
     "check:backend": ".venv\\Scripts\\python.exe -m py_compile api/main.py main.py",
     "smoke:backend": ".venv\\Scripts\\python.exe scripts/smoke_api.py",
+    "validate": "npm run check:backend && npm run smoke:backend && npm run build",
     "test:backend": ".venv\\Scripts\\python.exe -m pytest",
     "test:frontend": "cd frontend && npm test",
     "install:all": "pip install -r requirements.txt && cd frontend && npm install",

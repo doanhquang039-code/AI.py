@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
-import { Observable, Subject, interval } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { retry, tap, delayWhen } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
 export interface WebSocketMessage {
@@ -13,11 +12,13 @@ export interface WebSocketMessage {
   providedIn: 'root'
 })
 export class WebSocketService {
-  private socket$: WebSocketSubject<any> | null = null;
+  private socket$: WebSocketSubject<WebSocketMessage> | null = null;
   private messagesSubject$ = new Subject<WebSocketMessage>();
   public messages$ = this.messagesSubject$.asObservable();
   
   private reconnectInterval = 5000; // 5 seconds
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private shouldReconnect = true;
   private isConnected = false;
   private wsUrl = environment.wsUrl;
 
@@ -33,12 +34,14 @@ export class WebSocketService {
       return;
     }
 
+    this.shouldReconnect = true;
     this.socket$ = webSocket({
       url: this.wsUrl,
       openObserver: {
         next: () => {
           console.log('✅ WebSocket connected');
           this.isConnected = true;
+          this.clearReconnectTimer();
           this.sendMessage({ type: 'subscribe' });
         }
       },
@@ -47,51 +50,55 @@ export class WebSocketService {
           console.log('❌ WebSocket disconnected');
           this.isConnected = false;
           this.socket$ = null;
-          this.reconnect();
+          this.scheduleReconnect();
         }
       }
     });
 
-    this.socket$
-      .pipe(
-        tap({
-          error: (error) => console.error('WebSocket error:', error)
-        }),
-        retry({
-          delay: () => {
-            console.log(`Retrying connection in ${this.reconnectInterval}ms...`);
-            return interval(this.reconnectInterval);
-          }
-        })
-      )
-      .subscribe({
-        next: (message) => this.handleMessage(message),
-        error: (error) => console.error('WebSocket subscription error:', error)
-      });
+    this.socket$.subscribe({
+      next: (message) => this.handleMessage(message),
+      error: (error) => {
+        console.error('WebSocket error:', error);
+        this.isConnected = false;
+        this.socket$ = null;
+        this.scheduleReconnect();
+      }
+    });
   }
 
   /**
    * Reconnect to WebSocket server
    */
-  private reconnect(): void {
-    setTimeout(() => {
+  private scheduleReconnect(): void {
+    if (!this.shouldReconnect || this.reconnectTimer) {
+      return;
+    }
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       console.log('Attempting to reconnect...');
       this.connect();
     }, this.reconnectInterval);
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   /**
    * Handle incoming WebSocket messages
    */
   private handleMessage(message: WebSocketMessage): void {
-    console.log('📨 WebSocket message received:', message);
     this.messagesSubject$.next(message);
   }
 
   /**
    * Send message to WebSocket server
    */
-  public sendMessage(message: any): void {
+  public sendMessage(message: WebSocketMessage): void {
     if (this.socket$ && this.isConnected) {
       this.socket$.next(message);
     } else {
@@ -143,6 +150,8 @@ export class WebSocketService {
    * Close WebSocket connection
    */
   public disconnect(): void {
+    this.shouldReconnect = false;
+    this.clearReconnectTimer();
     if (this.socket$) {
       this.socket$.complete();
       this.socket$ = null;

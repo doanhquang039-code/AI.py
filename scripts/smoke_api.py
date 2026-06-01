@@ -8,6 +8,11 @@ from http.client import HTTPConnection
 
 PORT = int(os.environ.get("AI_SMOKE_PORT", "8012"))
 HOST = "127.0.0.1"
+ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
+MODELS_DIR = os.path.join(ROOT_DIR, "models")
+SMOKE_MODEL_1 = "smoke_dqn_agent1_ep3.pt"
+SMOKE_MODEL_2 = "smoke_ppo_agent1_ep3.pt"
+SMOKE_NOT_MODEL = "smoke_notes.txt"
 BASE_PATHS = [
     "/",
     "/api/health",
@@ -23,7 +28,7 @@ BASE_PATHS = [
 ]
 
 
-def request(method, path, body=None):
+def request(method, path, body=None, expected_status=None):
     conn = HTTPConnection(HOST, PORT, timeout=5)
     payload = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"} if body is not None else {}
@@ -31,7 +36,9 @@ def request(method, path, body=None):
     response = conn.getresponse()
     data = response.read()
     conn.close()
-    if response.status >= 400:
+    if expected_status is not None and response.status != expected_status:
+        raise RuntimeError(f"{method} {path} returned {response.status}, expected {expected_status}: {data[:200]!r}")
+    if expected_status is None and response.status >= 400:
         raise RuntimeError(f"{method} {path} returned {response.status}: {data[:200]!r}")
     return response.status, data
 
@@ -62,7 +69,7 @@ def main():
     ]
     process = subprocess.Popen(
         cmd,
-        cwd=os.path.dirname(os.path.dirname(__file__)),
+        cwd=ROOT_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -87,6 +94,48 @@ def main():
 
         status, _ = request("POST", f"/api/training/stop/{session_id}", {})
         print(f"OK {status} /api/training/stop/{session_id}")
+
+        os.makedirs(MODELS_DIR, exist_ok=True)
+        model_paths = [
+            os.path.join(MODELS_DIR, SMOKE_MODEL_1),
+            os.path.join(MODELS_DIR, SMOKE_MODEL_2),
+            os.path.join(MODELS_DIR, SMOKE_NOT_MODEL),
+        ]
+        for index, model_path in enumerate(model_paths, start=1):
+            with open(model_path, "wb") as model_file:
+                model_file.write(f"smoke model {index}".encode("utf-8"))
+
+        try:
+            status, data = request("GET", "/api/models")
+            model_names = {model["name"] for model in json.loads(data.decode("utf-8"))["models"]}
+            if SMOKE_NOT_MODEL in model_names:
+                raise RuntimeError("/api/models included a non-model file")
+            print(f"OK {status} /api/models excludes non-model files")
+
+            status, _ = request("POST", "/api/models/compare", {"model1": SMOKE_MODEL_1, "model2": SMOKE_MODEL_2})
+            print(f"OK {status} /api/models/compare")
+
+            status, _ = request(
+                "POST",
+                "/api/models/compare",
+                {"model1": "../outside.pt", "model2": SMOKE_MODEL_2},
+                expected_status=400,
+            )
+            print(f"OK {status} /api/models/compare invalid filename")
+
+            status, _ = request("POST", f"/api/models/evaluate/{SMOKE_MODEL_1}", {})
+            print(f"OK {status} /api/models/evaluate/{SMOKE_MODEL_1}")
+
+            status, _ = request("GET", f"/api/models/export/{SMOKE_MODEL_1}")
+            print(f"OK {status} /api/models/export/{SMOKE_MODEL_1}")
+
+            for model_name in (SMOKE_MODEL_1, SMOKE_MODEL_2):
+                status, _ = request("DELETE", f"/api/models/{model_name}")
+                print(f"OK {status} /api/models/{model_name}")
+        finally:
+            for model_path in model_paths:
+                if os.path.exists(model_path):
+                    os.remove(model_path)
     finally:
         process.terminate()
         try:
