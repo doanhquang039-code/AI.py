@@ -1,4 +1,5 @@
 export const environment = {
   production: true,
-  apiUrl: 'https://your-api-domain.com/api'
+  apiUrl: '/api',
+  wsUrl: `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
 };

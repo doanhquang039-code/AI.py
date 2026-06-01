@@ -17,6 +17,24 @@ export class ModelService {
     return this.api.delete(`models/${modelName}`);
   }
 
+  getExportUrl(modelName: string): string {
+    return `${this.api.getBaseUrl()}/models/export/${encodeURIComponent(modelName)}`;
+  }
+
+  importModel(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.api.postForm('models/import', formData);
+  }
+
+  evaluateModel(modelName: string): Observable<any> {
+    return this.api.post(`models/evaluate/${encodeURIComponent(modelName)}`, {});
+  }
+
+  compareModels(model1: string, model2: string): Observable<any> {
+    return this.api.post('models/compare', { model1, model2 });
+  }
+
   getAlgorithms(): Observable<{ algorithms: Algorithm[] }> {
     return this.api.get<{ algorithms: Algorithm[] }>('algorithms');
   }

@@ -23,6 +23,10 @@ export class ApiService {
     return throwError(() => error);
   }
 
+  getBaseUrl(): string {
+    return this.apiUrl;
+  }
+
   // Generic GET request
   get<T>(endpoint: string): Observable<T> {
     return this.http.get<T>(`${this.apiUrl}/${endpoint}`, {
@@ -37,6 +41,12 @@ export class ApiService {
     return this.http.post<T>(`${this.apiUrl}/${endpoint}`, data, {
       headers: this.getHeaders()
     }).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  postForm<T>(endpoint: string, data: FormData): Observable<T> {
+    return this.http.post<T>(`${this.apiUrl}/${endpoint}`, data).pipe(
       catchError(this.handleError)
     );
   }

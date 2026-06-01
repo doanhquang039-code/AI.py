@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Observable, Subject, interval } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { retry, tap, delayWhen } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
 export interface WebSocketMessage {
   type: string;
@@ -18,7 +19,7 @@ export class WebSocketService {
   
   private reconnectInterval = 5000; // 5 seconds
   private isConnected = false;
-  private wsUrl = 'ws://localhost:8000/ws';
+  private wsUrl = environment.wsUrl;
 
   constructor() {
     this.connect();

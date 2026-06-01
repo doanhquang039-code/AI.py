@@ -107,6 +107,12 @@ import { Model } from '../../models/model.model';
         <button class="btn btn-secondary" (click)="clearSelection()">
           Clear Selection
         </button>
+        <div class="comparison-result" *ngIf="comparisonResult">
+          <h4>Result</h4>
+          <p>Winner: {{comparisonResult.winner}}</p>
+          <p>{{comparisonResult.model1.name}} score: {{comparisonResult.model1.score}}</p>
+          <p>{{comparisonResult.model2.name}} score: {{comparisonResult.model2.score}}</p>
+        </div>
       </div>
 
       <!-- Import Dialog -->
@@ -114,9 +120,10 @@ import { Model } from '../../models/model.model';
         <div class="dialog" (click)="$event.stopPropagation()">
           <h3>📥 Import Model</h3>
           <input type="file" (change)="onFileSelected($event)" accept=".pt,.npy">
+          <p class="dialog-status" *ngIf="importing">Importing {{selectedFile?.name}}...</p>
           <div class="dialog-actions">
             <button class="btn btn-secondary" (click)="showImportDialog = false">Cancel</button>
-            <button class="btn btn-primary" (click)="importModel()" [disabled]="!selectedFile">
+            <button class="btn btn-primary" (click)="importModel()" [disabled]="!selectedFile || importing">
               Import
             </button>
           </div>
@@ -364,6 +371,20 @@ import { Model } from '../../models/model.model';
       color: white;
     }
 
+    .dialog-status {
+      color: rgba(255, 255, 255, 0.8);
+      margin: 0.5rem 0 1rem;
+    }
+
+    .comparison-result {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 8px;
+      background: rgba(76, 175, 80, 0.12);
+      border: 1px solid rgba(76, 175, 80, 0.28);
+      color: white;
+    }
+
     .dialog-actions {
       display: flex;
       gap: 1rem;
@@ -431,6 +452,8 @@ export class ModelsComponent implements OnInit {
   loading = false;
   showImportDialog = false;
   selectedFile: File | null = null;
+  importing = false;
+  comparisonResult: any = null;
 
   constructor(private modelService: ModelService) {}
 
@@ -478,12 +501,19 @@ export class ModelsComponent implements OnInit {
   }
 
   exportModel(modelName: string) {
-    window.open(`http://localhost:8000/api/models/export/${modelName}`, '_blank');
+    window.open(this.modelService.getExportUrl(modelName), '_blank');
   }
 
   evaluateModel(modelName: string) {
-    console.log('Evaluate model:', modelName);
-    alert(`Evaluating model: ${modelName}`);
+    this.modelService.evaluateModel(modelName).subscribe({
+      next: (result) => {
+        alert(`${modelName}\nAvg reward: ${result.avg_reward}\nSuccess rate: ${(result.success_rate * 100).toFixed(1)}%`);
+      },
+      error: (err) => {
+        console.error('Failed to evaluate model:', err);
+        alert('Failed to evaluate model');
+      }
+    });
   }
 
   selectForComparison(model: Model) {
@@ -502,12 +532,21 @@ export class ModelsComponent implements OnInit {
       return;
     }
 
-    console.log('Comparing models:', this.selectedModels);
-    alert(`Comparing ${this.selectedModels[0].name} vs ${this.selectedModels[1].name}`);
+    const [model1, model2] = this.selectedModels;
+    this.modelService.compareModels(model1.name, model2.name).subscribe({
+      next: (result) => {
+        this.comparisonResult = result;
+      },
+      error: (err) => {
+        console.error('Failed to compare models:', err);
+        alert('Failed to compare models');
+      }
+    });
   }
 
   clearSelection() {
     this.selectedModels = [];
+    this.comparisonResult = null;
   }
 
   deleteModel(modelName: string) {
@@ -537,9 +576,20 @@ export class ModelsComponent implements OnInit {
       return;
     }
 
-    console.log('Importing model:', this.selectedFile.name);
-    this.showImportDialog = false;
-    this.selectedFile = null;
-    alert('Model import feature coming soon!');
+    this.importing = true;
+    this.modelService.importModel(this.selectedFile).subscribe({
+      next: () => {
+        this.importing = false;
+        this.showImportDialog = false;
+        this.selectedFile = null;
+        this.loadModels();
+        alert('Model imported successfully');
+      },
+      error: (err) => {
+        console.error('Failed to import model:', err);
+        this.importing = false;
+        alert('Failed to import model');
+      }
+    });
   }
 }

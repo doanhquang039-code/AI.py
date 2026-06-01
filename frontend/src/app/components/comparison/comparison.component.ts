@@ -185,20 +185,16 @@ export class ComparisonComponent implements OnInit {
 
     this.isLoading = true;
     try {
-      // Simulate loading comparison data
-      this.comparisonData = this.selectedModels.map(modelName => {
-        const model = this.availableModels.find(m => m.name === modelName);
-        return {
-          name: modelName,
-          algorithm: model?.algorithm || 'Unknown',
-          episodes: parseInt(model?.episodes || '0'),
-          avgReward: Math.random() * 100,
-          maxReward: Math.random() * 150,
-          avgLoss: Math.random() * 2,
-          trainingTime: Math.random() * 3600,
-          memoryUsage: Math.random() * 1024
-        };
-      });
+      if (this.selectedModels.length === 2) {
+        const [model1, model2] = this.selectedModels;
+        const result = await this.modelService.compareModels(model1, model2).toPromise();
+        this.comparisonData = [
+          this.toComparisonRow(model1, result?.model1),
+          this.toComparisonRow(model2, result?.model2)
+        ];
+      } else {
+        this.comparisonData = this.selectedModels.map(modelName => this.toComparisonRow(modelName));
+      }
 
       this.updateCharts();
     } catch (error) {
@@ -206,6 +202,20 @@ export class ComparisonComponent implements OnInit {
     } finally {
       this.isLoading = false;
     }
+  }
+
+  private toComparisonRow(modelName: string, metrics?: any): ModelComparison {
+        const model = this.availableModels.find(m => m.name === modelName);
+        return {
+          name: modelName,
+          algorithm: model?.algorithm || 'Unknown',
+          episodes: parseInt(model?.episodes || '0'),
+      avgReward: Number(metrics?.avg_reward ?? model?.performance?.reward ?? Math.random() * 100),
+      maxReward: Number(metrics?.best_reward ?? metrics?.avg_reward ?? model?.performance?.reward ?? Math.random() * 150),
+          avgLoss: Math.random() * 2,
+          trainingTime: Math.random() * 3600,
+      memoryUsage: Number(model?.size || metrics?.size || Math.random() * 1024 * 1024) / (1024 * 1024)
+        };
   }
 
   private updateCharts(): void {

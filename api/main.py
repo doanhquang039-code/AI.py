@@ -9,6 +9,7 @@ from datetime import datetime
 import numpy as np
 import asyncio
 import random
+import shutil
 
 app = FastAPI(
     title="AI Dashboard API",
@@ -19,7 +20,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4200"],  # Angular dev server
+    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:4200").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,10 +49,22 @@ class ModelInfo(BaseModel):
     size: int
     performance: Dict[str, float]
 
+class ModelComparison(BaseModel):
+    model1: str
+    model2: str
+
+class ExperimentConfig(BaseModel):
+    name: str
+    description: str = ""
+    algorithms: List[str]
+    episodes: int
+    runs: int = 1
+
 # In-memory storage (replace with database in production)
 training_sessions = {}
 models_cache = []
 active_websockets: List[WebSocket] = []
+experiments = {}
 
 # WebSocket Manager
 class ConnectionManager:
@@ -63,7 +76,8 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
@@ -78,7 +92,7 @@ manager = ConnectionManager()
 async def root():
     return {
         "message": "AI Dashboard API",
-        "version": "1.0.0",
+        "version": "2.1.0",
         "status": "running"
     }
 
@@ -86,7 +100,10 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
-        "timestamp": datetime.now().isoformat()
+        "version": "2.1.0",
+        "timestamp": datetime.now().isoformat(),
+        "active_websockets": len(manager.active_connections),
+        "active_training_sessions": len([s for s in training_sessions.values() if s["status"] == "running"])
     }
 
 @app.get("/api/training/status")
@@ -146,21 +163,33 @@ async def get_training_history():
     
     if os.path.exists(logs_dir):
         for filename in os.listdir(logs_dir):
-            if filename.endswith('.jsonl'):
-                filepath = os.path.join(logs_dir, filename)
-                try:
-                    with open(filepath, 'r') as f:
-                        lines = f.readlines()
-                        if lines:
-                            last_line = json.loads(lines[-1])
-                            history.append({
-                                "filename": filename,
-                                "episodes": len(lines),
-                                "last_episode": last_line,
-                                "created_at": filename.split('_')[1] + '_' + filename.split('_')[2].replace('.jsonl', '')
-                            })
-                except Exception as e:
-                    print(f"Error reading {filename}: {e}")
+            if not filename.endswith('.jsonl'):
+                continue
+
+            filepath = os.path.join(logs_dir, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    entries = [json.loads(line) for line in f if line.strip()]
+
+                if not entries:
+                    continue
+
+                stat = os.stat(filepath)
+                history.append({
+                    "filename": filename,
+                    "episodes": len(entries),
+                    "last_episode": entries[-1],
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "updated_at": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                })
+            except Exception as e:
+                history.append({
+                    "filename": filename,
+                    "episodes": 0,
+                    "last_episode": None,
+                    "created_at": None,
+                    "error": str(e)
+                })
     
     return {"history": history}
 
@@ -206,6 +235,81 @@ async def delete_model(model_name: str):
         return {"message": f"Model {model_name} deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/models/export/{model_name}")
+async def export_model(model_name: str):
+    """Export a model file."""
+    filepath = os.path.join("models", model_name)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    return FileResponse(filepath, media_type="application/octet-stream", filename=model_name)
+
+@app.post("/api/models/import")
+async def import_model(file: UploadFile = File(...)):
+    """Import a model file into the models directory."""
+    os.makedirs("models", exist_ok=True)
+    safe_filename = os.path.basename(file.filename or "")
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    filepath = os.path.join("models", safe_filename)
+    with open(filepath, "wb") as output:
+        shutil.copyfileobj(file.file, output)
+
+    return {
+        "message": f"Model {safe_filename} imported successfully",
+        "filename": safe_filename,
+        "size": os.path.getsize(filepath)
+    }
+
+@app.post("/api/models/compare")
+async def compare_models(comparison: ModelComparison):
+    """Compare two saved model files using lightweight metadata and demo metrics."""
+    models_dir = "models"
+    model1_path = os.path.join(models_dir, comparison.model1)
+    model2_path = os.path.join(models_dir, comparison.model2)
+
+    if not os.path.exists(model1_path) or not os.path.exists(model2_path):
+        raise HTTPException(status_code=404, detail="One or both models not found")
+
+    model1_score = float(np.random.uniform(0.70, 0.96))
+    model2_score = float(np.random.uniform(0.70, 0.96))
+
+    return {
+        "model1": {
+            "name": comparison.model1,
+            "size": os.path.getsize(model1_path),
+            "score": round(model1_score, 3),
+            "avg_reward": round(float(np.random.uniform(45, 100)), 2)
+        },
+        "model2": {
+            "name": comparison.model2,
+            "size": os.path.getsize(model2_path),
+            "score": round(model2_score, 3),
+            "avg_reward": round(float(np.random.uniform(45, 100)), 2)
+        },
+        "winner": comparison.model1 if model1_score >= model2_score else comparison.model2,
+        "comparison_date": datetime.now().isoformat()
+    }
+
+@app.post("/api/models/evaluate/{model_name}")
+async def evaluate_model(model_name: str, test_episodes: int = 10):
+    """Evaluate a saved model with demo metrics."""
+    filepath = os.path.join("models", model_name)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    rewards = [float(np.random.uniform(30, 100)) for _ in range(max(1, test_episodes))]
+    return {
+        "model_name": model_name,
+        "test_episodes": len(rewards),
+        "avg_reward": round(float(np.mean(rewards)), 2),
+        "min_reward": round(float(np.min(rewards)), 2),
+        "max_reward": round(float(np.max(rewards)), 2),
+        "success_rate": round(float(np.random.uniform(0.70, 0.96)), 3),
+        "evaluation_date": datetime.now().isoformat()
+    }
 
 @app.get("/api/stats/summary")
 async def get_stats_summary():
@@ -269,6 +373,59 @@ async def get_detailed_stats():
             "gpu_available": False
         },
         "last_updated": datetime.now().isoformat()
+    }
+
+@app.post("/api/experiments/create")
+async def create_experiment(config: ExperimentConfig):
+    """Create an experiment definition."""
+    experiment_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    experiments[experiment_id] = {
+        "id": experiment_id,
+        "config": config.dict(),
+        "status": "created",
+        "created_at": datetime.now().isoformat(),
+        "results": []
+    }
+
+    return {
+        "experiment_id": experiment_id,
+        "message": "Experiment created successfully",
+        "config": config.dict()
+    }
+
+@app.get("/api/experiments")
+async def get_experiments():
+    return {"experiments": list(experiments.values())}
+
+@app.get("/api/experiments/{experiment_id}")
+async def get_experiment(experiment_id: str):
+    if experiment_id not in experiments:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return experiments[experiment_id]
+
+@app.post("/api/tuning/start")
+async def start_hyperparameter_tuning(payload: Dict[str, Any]):
+    """Start a lightweight hyperparameter tuning job placeholder."""
+    tuning_id = f"tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    return {
+        "tuning_id": tuning_id,
+        "message": "Hyperparameter tuning started",
+        "algorithm": payload.get("algorithm", "dqn"),
+        "param_ranges": payload.get("param_ranges", {}),
+        "estimated_time": "30 minutes"
+    }
+
+@app.get("/api/system/health")
+async def system_health():
+    """Get system health details for dashboard diagnostics."""
+    return {
+        "status": "healthy",
+        "cpu_usage": round(random.uniform(12, 68), 1),
+        "memory_usage": round(random.uniform(30, 74), 1),
+        "disk_usage": round(random.uniform(35, 70), 1),
+        "active_connections": len(manager.active_connections),
+        "active_trainings": len([s for s in training_sessions.values() if s["status"] == "running"]),
+        "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/api/algorithms")
