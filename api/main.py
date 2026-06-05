@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import json
 import os
@@ -11,6 +11,9 @@ import numpy as np
 import asyncio
 import random
 import shutil
+import time
+
+from ai.hyperparameter_tuner import HyperparameterTuner, HyperparameterSpace, OptimizationMethod
 
 app = FastAPI(
     title="AI Dashboard API",
@@ -61,11 +64,25 @@ class ExperimentConfig(BaseModel):
     episodes: int
     runs: int = 1
 
+class TuningConfig(BaseModel):
+    algorithm: str = "dqn"
+    method: str = "random_search"
+    trials: int = 8
+    episodes: int = 100
+    param_ranges: Dict[str, Any] = Field(default_factory=dict)
+
+class IoTControlCommand(BaseModel):
+    device_id: str
+    mode: str = "auto"
+    target_temperature: Optional[float] = None
+
 # In-memory storage (replace with database in production)
 training_sessions = {}
 models_cache = []
 active_websockets: List[WebSocket] = []
 experiments = {}
+tuning_sessions = {}
+iot_commands = []
 MODELS_DIR = Path("models")
 ALLOWED_MODEL_EXTENSIONS = {".pt", ".npy"}
 
@@ -418,16 +435,333 @@ async def get_experiment(experiment_id: str):
     return experiments[experiment_id]
 
 @app.post("/api/tuning/start")
-async def start_hyperparameter_tuning(payload: Dict[str, Any]):
-    """Start a lightweight hyperparameter tuning job placeholder."""
+async def start_hyperparameter_tuning(payload: TuningConfig):
+    """Run a lightweight hyperparameter tuning job and store the result."""
     tuning_id = f"tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    algorithm = payload.algorithm.lower()
+    trials = max(1, min(int(payload.trials), 50))
+    method = _resolve_optimization_method(payload.method)
+    tuner = HyperparameterTuner(
+        _build_parameter_space(algorithm, payload.param_ranges),
+        optimization_method=method,
+        n_trials=trials,
+        random_seed=random.randint(1, 999999),
+    )
+
+    started = time.perf_counter()
+    _run_tuning_trials(tuner, algorithm, payload.episodes)
+    duration = time.perf_counter() - started
+
+    session = {
+        "id": tuning_id,
+        "algorithm": algorithm,
+        "method": method.value,
+        "status": "completed",
+        "started_at": datetime.now().isoformat(),
+        "duration_seconds": round(duration, 4),
+        "trials_requested": trials,
+        "trials_completed": len(tuner.trials),
+        "best_trial": _json_safe(tuner.best_trial),
+        "history": _json_safe(tuner.get_optimization_history()),
+    }
+    tuning_sessions[tuning_id] = session
+
     return {
         "tuning_id": tuning_id,
-        "message": "Hyperparameter tuning started",
-        "algorithm": payload.get("algorithm", "dqn"),
-        "param_ranges": payload.get("param_ranges", {}),
-        "estimated_time": "30 minutes"
+        "message": "Hyperparameter tuning completed",
+        "algorithm": algorithm,
+        "best_trial": session["best_trial"],
+        "trials_completed": session["trials_completed"],
     }
+
+@app.get("/api/tuning")
+async def get_tuning_sessions():
+    """List hyperparameter tuning sessions."""
+    return {"sessions": list(tuning_sessions.values())}
+
+@app.get("/api/tuning/{tuning_id}")
+async def get_tuning_session(tuning_id: str):
+    """Get a stored tuning session."""
+    if tuning_id not in tuning_sessions:
+        raise HTTPException(status_code=404, detail="Tuning session not found")
+    return tuning_sessions[tuning_id]
+
+def _resolve_optimization_method(method: str) -> OptimizationMethod:
+    try:
+        return OptimizationMethod((method or "random_search").lower())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Unsupported tuning method")
+
+def _build_parameter_space(algorithm: str, ranges: Dict[str, Any]) -> List[HyperparameterSpace]:
+    defaults = {
+        "q_learning": [
+            HyperparameterSpace("learning_rate", "continuous", 0.001, 0.5, log_scale=True),
+            HyperparameterSpace("discount_factor", "continuous", 0.9, 0.999),
+            HyperparameterSpace("epsilon_start", "continuous", 0.5, 1.0),
+            HyperparameterSpace("epsilon_decay", "continuous", 0.99, 0.9999),
+        ],
+        "dqn": [
+            HyperparameterSpace("learning_rate", "continuous", 0.0001, 0.01, log_scale=True),
+            HyperparameterSpace("batch_size", "discrete", 16, 128),
+            HyperparameterSpace("buffer_size", "discrete", 1000, 100000),
+            HyperparameterSpace("target_update_freq", "discrete", 10, 1000),
+            HyperparameterSpace("hidden_size", "categorical", values=[64, 128, 256, 512]),
+        ],
+        "ppo": [
+            HyperparameterSpace("learning_rate", "continuous", 0.0001, 0.01, log_scale=True),
+            HyperparameterSpace("clip_epsilon", "continuous", 0.1, 0.3),
+            HyperparameterSpace("value_coef", "continuous", 0.1, 1.0),
+            HyperparameterSpace("entropy_coef", "continuous", 0.001, 0.1, log_scale=True),
+            HyperparameterSpace("n_steps", "discrete", 128, 2048),
+        ],
+    }
+    parameter_space = defaults.get(algorithm, defaults["dqn"])
+
+    if not ranges:
+        return parameter_space
+
+    customized = []
+    for space in parameter_space:
+        override = ranges.get(space.name)
+        if not isinstance(override, dict):
+            customized.append(space)
+            continue
+
+        if space.param_type == "categorical":
+            values = override.get("values", space.values)
+            customized.append(HyperparameterSpace(space.name, space.param_type, values=values))
+        else:
+            customized.append(HyperparameterSpace(
+                space.name,
+                space.param_type,
+                override.get("min", space.min_value),
+                override.get("max", space.max_value),
+                log_scale=space.log_scale,
+            ))
+    return customized
+
+def _score_tuning_trial(algorithm: str, params: Dict[str, Any], episodes: int):
+    started = time.perf_counter()
+    score = 0.55
+
+    learning_rate = float(params.get("learning_rate", 0.001))
+    score += max(0, 0.22 - abs(np.log10(learning_rate) + 3) * 0.08)
+
+    if algorithm == "q_learning":
+        score += float(params.get("discount_factor", 0.95)) * 0.2
+        score += (1 - abs(float(params.get("epsilon_start", 0.8)) - 0.75)) * 0.08
+    elif algorithm == "ppo":
+        score += (1 - abs(float(params.get("clip_epsilon", 0.2)) - 0.2) / 0.2) * 0.12
+        score += min(float(params.get("n_steps", 512)) / 2048, 1) * 0.08
+    else:
+        score += min(float(params.get("batch_size", 64)) / 128, 1) * 0.08
+        score += min(float(params.get("hidden_size", 128)) / 512, 1) * 0.08
+
+    score += min(max(episodes, 1), 1000) / 1000 * 0.05
+    score += random.uniform(-0.025, 0.025)
+    score = round(max(0.0, min(score, 0.99)), 4)
+    metrics = {
+        "estimated_reward": round(score * 100, 2),
+        "stability": round(0.6 + score * 0.35, 4),
+    }
+    return score, time.perf_counter() - started, metrics
+
+def _run_tuning_trials(tuner: HyperparameterTuner, algorithm: str, episodes: int):
+    for _ in range(tuner.n_trials):
+        params = tuner.sample_parameters()
+        score, training_time, metrics = _score_tuning_trial(algorithm, params, episodes)
+        tuner.record_trial(params, score, training_time, metrics)
+
+def _json_safe(value: Any) -> Any:
+    if hasattr(value, "__dict__") and not isinstance(value, dict):
+        value = value.__dict__
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+@app.get("/api/iot/devices")
+async def get_iot_devices():
+    """Get simulated IoT devices with AI-ready status metadata."""
+    return {"devices": _generate_iot_devices(), "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/iot/fleet/summary")
+async def get_iot_fleet_summary():
+    """Get aggregated IoT fleet health, risk, and efficiency metrics."""
+    devices = _generate_iot_devices()
+    anomaly_scores = [device["ai"]["anomaly_score"] for device in devices]
+    total_energy = round(sum(device["metrics"]["energy_kw"] for device in devices), 2)
+    high_risk = [device for device in devices if device["ai"]["risk"] == "high"]
+    warning_count = len([device for device in devices if device["status"] == "warning"])
+
+    return {
+        "device_count": len(devices),
+        "online_count": len([device for device in devices if device["status"] == "online"]),
+        "warning_count": warning_count,
+        "high_risk_count": len(high_risk),
+        "avg_anomaly_score": round(float(np.mean(anomaly_scores)), 3),
+        "total_energy_kw": total_energy,
+        "estimated_savings_kw": round(total_energy * random.uniform(0.08, 0.16), 2),
+        "fleet_health": round(max(0.0, 1.0 - float(np.mean(anomaly_scores))) * 100, 1),
+        "top_risk_device": max(devices, key=lambda device: device["ai"]["anomaly_score"]),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+@app.get("/api/iot/commands")
+async def get_iot_commands():
+    """Get queued IoT control command history."""
+    return {"commands": list(reversed(iot_commands[-25:])), "count": len(iot_commands)}
+
+@app.post("/api/iot/optimize")
+async def optimize_iot_fleet(payload: Dict[str, Any]):
+    """Generate a simulated AI optimization plan for the IoT fleet."""
+    objective = payload.get("objective", "energy")
+    devices = _generate_iot_devices()
+    high_risk_devices = [device for device in devices if device["ai"]["risk"] in {"high", "medium"}]
+    energy_kw = sum(device["metrics"]["energy_kw"] for device in devices)
+    plan_id = f"plan_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(100, 999)}"
+
+    actions = [
+        {
+            "device_id": device["id"],
+            "action": "maintenance_check" if device["ai"]["risk"] == "high" else "setpoint_adjustment",
+            "priority": device["ai"]["risk"],
+            "expected_impact": f"{round(device['ai']['anomaly_score'] * 18, 1)}% risk reduction",
+        }
+        for device in high_risk_devices[:4]
+    ]
+
+    if not actions:
+        actions.append({
+            "device_id": devices[0]["id"],
+            "action": "eco_schedule",
+            "priority": "low",
+            "expected_impact": "6.5% energy reduction",
+        })
+
+    return {
+        "plan_id": plan_id,
+        "objective": objective,
+        "confidence": round(random.uniform(0.78, 0.94), 3),
+        "estimated_savings_kw": round(energy_kw * random.uniform(0.09, 0.18), 2),
+        "actions": actions,
+        "created_at": datetime.now().isoformat(),
+    }
+
+def _generate_iot_devices() -> List[Dict[str, Any]]:
+    devices = []
+    for index, zone in enumerate(["Factory A", "Factory B", "Cold Storage", "Solar Roof", "Server Room"], start=1):
+        temperature = round(random.uniform(18, 38), 1)
+        vibration = round(random.uniform(0.05, 1.4), 3)
+        energy = round(random.uniform(1.5, 12.0), 2)
+        anomaly_score = _iot_anomaly_score(temperature, vibration, energy)
+        devices.append({
+            "id": f"iot-{index:03d}",
+            "name": f"Edge Sensor {index}",
+            "zone": zone,
+            "status": "warning" if anomaly_score > 0.65 else "online",
+            "last_seen": datetime.now().isoformat(),
+            "metrics": {
+                "temperature": temperature,
+                "humidity": round(random.uniform(35, 82), 1),
+                "vibration": vibration,
+                "energy_kw": energy,
+            },
+            "ai": {
+                "anomaly_score": anomaly_score,
+                "risk": "high" if anomaly_score > 0.78 else "medium" if anomaly_score > 0.55 else "low",
+                "predicted_maintenance_hours": int(max(8, 180 - anomaly_score * 150)),
+            }
+        })
+    return devices
+
+@app.get("/api/iot/telemetry")
+async def get_iot_telemetry(device_id: str = "iot-001", points: int = 24):
+    """Get time-series telemetry and AI forecast for one IoT device."""
+    safe_points = max(6, min(points, 96))
+    baseline = random.uniform(22, 30)
+    telemetry = []
+    for idx in range(safe_points):
+        drift = idx / safe_points * random.uniform(-1.5, 2.5)
+        temperature = baseline + drift + np.sin(idx / 3) * 1.8 + random.uniform(-0.4, 0.4)
+        vibration = max(0.02, random.uniform(0.05, 0.55) + (idx / safe_points) * random.uniform(0, 0.5))
+        energy = max(0.5, random.uniform(2.5, 8.5) + np.cos(idx / 4) * 0.8)
+        telemetry.append({
+            "index": idx,
+            "temperature": round(float(temperature), 2),
+            "vibration": round(float(vibration), 3),
+            "energy_kw": round(float(energy), 2),
+            "anomaly_score": _iot_anomaly_score(temperature, vibration, energy),
+        })
+
+    recent_temp = float(np.mean([point["temperature"] for point in telemetry[-5:]]))
+    recent_vibration = float(np.mean([point["vibration"] for point in telemetry[-5:]]))
+    forecast = [
+        {
+            "index": safe_points + idx,
+            "temperature": round(recent_temp + idx * random.uniform(-0.08, 0.22), 2),
+            "vibration": round(max(0.02, recent_vibration + idx * random.uniform(-0.005, 0.018)), 3),
+        }
+        for idx in range(1, 7)
+    ]
+
+    return {
+        "device_id": os.path.basename(device_id),
+        "telemetry": telemetry,
+        "forecast": forecast,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/iot/insights")
+async def get_iot_insights():
+    """Get AI-generated IoT operations insights."""
+    return {
+        "insights": [
+            {
+                "title": "Cooling optimization",
+                "severity": "medium",
+                "impact": "Estimated 8-12% energy reduction",
+                "recommendation": "Shift HVAC setpoint by 1.5 C during low-load periods."
+            },
+            {
+                "title": "Predictive maintenance",
+                "severity": "high",
+                "impact": "Vibration trend indicates bearing wear risk",
+                "recommendation": "Schedule inspection for Edge Sensor 2 within 48 hours."
+            },
+            {
+                "title": "Sensor calibration",
+                "severity": "low",
+                "impact": "Humidity variance is outside peer group baseline",
+                "recommendation": "Run calibration check on Cold Storage humidity probe."
+            }
+        ],
+        "generated_at": datetime.now().isoformat()
+    }
+
+@app.post("/api/iot/control")
+async def post_iot_control(command: IoTControlCommand):
+    """Store a simulated IoT control command."""
+    record = {
+        "id": f"cmd_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(iot_commands) + 1}",
+        "device_id": os.path.basename(command.device_id),
+        "mode": command.mode,
+        "target_temperature": command.target_temperature,
+        "status": "queued",
+        "created_at": datetime.now().isoformat(),
+    }
+    iot_commands.append(record)
+    return record
+
+def _iot_anomaly_score(temperature: float, vibration: float, energy: float) -> float:
+    temp_score = max(0.0, min(1.0, abs(float(temperature) - 25.0) / 18.0))
+    vibration_score = max(0.0, min(1.0, float(vibration) / 1.3))
+    energy_score = max(0.0, min(1.0, float(energy) / 12.0))
+    score = temp_score * 0.34 + vibration_score * 0.46 + energy_score * 0.2
+    return round(float(score), 3)
 
 @app.get("/api/system/health")
 async def system_health():

@@ -24,6 +24,12 @@ BASE_PATHS = [
     "/api/stats/detailed",
     "/api/algorithms",
     "/api/experiments",
+    "/api/tuning",
+    "/api/iot/devices",
+    "/api/iot/fleet/summary",
+    "/api/iot/telemetry",
+    "/api/iot/insights",
+    "/api/iot/commands",
     "/api/system/health",
 ]
 
@@ -94,6 +100,29 @@ def main():
 
         status, _ = request("POST", f"/api/training/stop/{session_id}", {})
         print(f"OK {status} /api/training/stop/{session_id}")
+
+        tuning_config = {
+            "algorithm": "dqn",
+            "method": "random_search",
+            "trials": 3,
+            "episodes": 20,
+        }
+        status, data = request("POST", "/api/tuning/start", tuning_config)
+        tuning_id = json.loads(data.decode("utf-8"))["tuning_id"]
+        print(f"OK {status} /api/tuning/start")
+
+        status, _ = request("GET", f"/api/tuning/{tuning_id}")
+        print(f"OK {status} /api/tuning/{tuning_id}")
+
+        status, _ = request(
+            "POST",
+            "/api/iot/control",
+            {"device_id": "iot-001", "mode": "eco", "target_temperature": 24.5},
+        )
+        print(f"OK {status} /api/iot/control")
+
+        status, _ = request("POST", "/api/iot/optimize", {"objective": "energy"})
+        print(f"OK {status} /api/iot/optimize")
 
         os.makedirs(MODELS_DIR, exist_ok=True)
         model_paths = [

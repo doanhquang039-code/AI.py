@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TrainingService } from '../../services/training.service';
 import { ModelService } from '../../services/model.service';
-import { TrainingConfig, TrainingStatus } from '../../models/training.model';
+import { TrainingConfig, TrainingStatus, TuningConfig, TuningSession } from '../../models/training.model';
 import { Algorithm } from '../../models/model.model';
 
 @Component({
@@ -105,6 +105,107 @@ import { Algorithm } from '../../models/model.model';
         </div>
       </div>
 
+      <!-- Hyperparameter Tuning -->
+      <div class="tuning-section">
+        <h3>Hyperparameter Tuning</h3>
+
+        <form class="config-form" (ngSubmit)="startTuning()">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Algorithm</label>
+              <select [(ngModel)]="tuningConfig.algorithm" name="tuning_algorithm" required>
+                <option *ngFor="let algo of algorithms" [value]="algo.id">
+                  {{algo.name}}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Method</label>
+              <select [(ngModel)]="tuningConfig.method" name="tuning_method" required>
+                <option value="random_search">Random Search</option>
+                <option value="grid_search">Grid Search</option>
+                <option value="bayesian">Bayesian</option>
+                <option value="genetic">Genetic</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Trials</label>
+              <input type="number" [(ngModel)]="tuningConfig.trials" name="tuning_trials"
+                     min="1" max="50" required>
+            </div>
+
+            <div class="form-group">
+              <label>Episodes</label>
+              <input type="number" [(ngModel)]="tuningConfig.episodes" name="tuning_episodes"
+                     min="1" max="10000" required>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" [disabled]="isTuning || !tuningConfig.algorithm">
+              {{isTuning ? 'Tuning...' : 'Start Tuning'}}
+            </button>
+            <button type="button" class="btn btn-secondary" (click)="loadTuningSessions()">
+              Refresh Tuning
+            </button>
+          </div>
+        </form>
+
+        <div class="tuning-result" *ngIf="selectedTuning">
+          <div class="status-header">
+            <span class="status-badge active">{{selectedTuning.status}}</span>
+            <span class="episode-info">
+              {{selectedTuning.trials_completed}} trials in {{selectedTuning.duration_seconds | number:'1.3-3'}}s
+            </span>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric">
+              <label>Best Score</label>
+              <div class="value">{{selectedTuning.best_trial.score | number:'1.4-4'}}</div>
+            </div>
+            <div class="metric">
+              <label>Algorithm</label>
+              <div class="value compact">{{selectedTuning.algorithm}}</div>
+            </div>
+            <div class="metric">
+              <label>Method</label>
+              <div class="value compact">{{selectedTuning.method}}</div>
+            </div>
+          </div>
+
+          <div class="params-list">
+            <span class="param-chip" *ngFor="let param of selectedTuning.best_trial.parameters | keyvalue">
+              {{param.key}}: {{param.value}}
+            </span>
+          </div>
+
+          <div class="trial-list">
+            <div class="trial-row" *ngFor="let trial of selectedTuning.history.slice(0, 6)">
+              <span>Trial {{trial.trial_id + 1}}</span>
+              <strong>{{trial.score | number:'1.4-4'}}</strong>
+              <span>{{trial.additional_metrics.estimated_reward | number:'1.1-1'}} reward</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-list tuning-history" *ngIf="tuningSessions.length > 0">
+          <div class="history-item" *ngFor="let session of tuningSessions" (click)="selectTuning(session)">
+            <div class="history-icon">T</div>
+            <div class="history-content">
+              <div class="history-title">{{session.algorithm}} / {{session.method}}</div>
+              <div class="history-meta">
+                Best: {{session.best_trial.score | number:'1.4-4'}} | Trials: {{session.trials_completed}} | {{session.started_at}}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Training History -->
       <div class="history-section">
         <h3>📜 Training History</h3>
@@ -150,6 +251,7 @@ import { Algorithm } from '../../models/model.model';
 
     .config-section,
     .status-section,
+    .tuning-section,
     .history-section {
       background: rgba(255, 255, 255, 0.1);
       backdrop-filter: blur(10px);
@@ -323,6 +425,61 @@ import { Algorithm } from '../../models/model.model';
       color: white;
     }
 
+    .metric .value.compact {
+      font-size: 1rem;
+      text-transform: uppercase;
+      overflow-wrap: anywhere;
+    }
+
+    .tuning-result {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin-top: 1.5rem;
+    }
+
+    .params-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+    }
+
+    .param-chip {
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      color: white;
+      padding: 0.45rem 0.65rem;
+      font-size: 0.85rem;
+      overflow-wrap: anywhere;
+    }
+
+    .trial-list {
+      display: grid;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+    }
+
+    .trial-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 1rem;
+      align-items: center;
+      color: rgba(255, 255, 255, 0.82);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 0.75rem;
+    }
+
+    .trial-row strong {
+      color: white;
+    }
+
+    .tuning-history {
+      margin-top: 1.25rem;
+    }
+
     .history-list {
       display: flex;
       flex-direction: column;
@@ -388,6 +545,20 @@ import { Algorithm } from '../../models/model.model';
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    @media (max-width: 760px) {
+      .form-row,
+      .metrics-grid,
+      .trial-row {
+        grid-template-columns: 1fr;
+      }
+
+      .form-actions,
+      .status-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+    }
   `]
 })
 export class TrainingComponent implements OnInit {
@@ -399,10 +570,20 @@ export class TrainingComponent implements OnInit {
     epsilon: 0.1
   };
 
+  tuningConfig: TuningConfig = {
+    algorithm: 'dqn',
+    method: 'random_search',
+    trials: 8,
+    episodes: 100
+  };
+
   status: TrainingStatus | null = null;
   algorithms: Algorithm[] = [];
   history: any[] = [];
+  tuningSessions: TuningSession[] = [];
+  selectedTuning: TuningSession | null = null;
   isTraining = false;
+  isTuning = false;
   loading = false;
   currentSessionId: string | null = null;
 
@@ -415,12 +596,16 @@ export class TrainingComponent implements OnInit {
     this.loadAlgorithms();
     this.loadStatus();
     this.loadHistory();
+    this.loadTuningSessions();
   }
 
   loadAlgorithms() {
     this.modelService.getAlgorithms().subscribe({
       next: (data) => {
         this.algorithms = data.algorithms;
+        if (!this.tuningConfig.algorithm && this.algorithms.length > 0) {
+          this.tuningConfig.algorithm = this.algorithms[0].id;
+        }
       },
       error: (err) => console.error('Failed to load algorithms:', err)
     });
@@ -489,5 +674,50 @@ export class TrainingComponent implements OnInit {
         alert('Failed to stop training');
       }
     });
+  }
+
+  startTuning() {
+    if (!this.tuningConfig.algorithm) {
+      alert('Please select an algorithm');
+      return;
+    }
+
+    this.isTuning = true;
+    this.trainingService.startTuning(this.tuningConfig).subscribe({
+      next: (response) => {
+        this.trainingService.getTuningSession(response.tuning_id).subscribe({
+          next: (session) => {
+            this.selectedTuning = session;
+            this.loadTuningSessions();
+            this.isTuning = false;
+          },
+          error: (err) => {
+            console.error('Failed to load tuning result:', err);
+            this.isTuning = false;
+          }
+        });
+      },
+      error: (err) => {
+        console.error('Failed to start tuning:', err);
+        this.isTuning = false;
+        alert('Failed to start tuning');
+      }
+    });
+  }
+
+  loadTuningSessions() {
+    this.trainingService.getTuningSessions().subscribe({
+      next: (data) => {
+        this.tuningSessions = data.sessions.slice().reverse();
+        if (!this.selectedTuning && this.tuningSessions.length > 0) {
+          this.selectedTuning = this.tuningSessions[0];
+        }
+      },
+      error: (err) => console.error('Failed to load tuning sessions:', err)
+    });
+  }
+
+  selectTuning(session: TuningSession) {
+    this.selectedTuning = session;
   }
 }

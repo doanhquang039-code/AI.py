@@ -32,6 +32,27 @@ def test_invalid_model_filename_is_rejected():
     assert response.status_code == 400
 
 
+def test_hyperparameter_tuning_session_is_recorded():
+    response = client.post(
+        "/api/tuning/start",
+        json={
+            "algorithm": "dqn",
+            "method": "random_search",
+            "trials": 3,
+            "episodes": 25,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["trials_completed"] == 3
+    assert payload["best_trial"]["score"] > 0
+
+    detail = client.get(f"/api/tuning/{payload['tuning_id']}")
+    assert detail.status_code == 200
+    assert len(detail.json()["history"]) == 3
+
+
 def run_endpoint(method, endpoint, data=None, description=""):
     """Test a single API endpoint"""
     url = f"{BASE_URL}{endpoint}"

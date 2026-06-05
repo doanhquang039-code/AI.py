@@ -1,8 +1,21 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
+import { ApiService } from '../../services/api.service';
 import { ModelService } from '../../services/model.service';
 import { TrainingService } from '../../services/training.service';
-import { Statistics, PerformanceStats } from '../../models/model.model';
+import { PerformanceStats, Statistics } from '../../models/model.model';
+import { TuningSession } from '../../models/training.model';
+
+interface SystemHealth {
+  status: string;
+  cpu_usage: number;
+  memory_usage: number;
+  disk_usage: number;
+  active_connections: number;
+  active_trainings: number;
+  timestamp: string;
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -10,97 +23,147 @@ import { Statistics, PerformanceStats } from '../../models/model.model';
   imports: [CommonModule],
   template: `
     <div class="dashboard-container">
-      <h2>📊 AI Training Dashboard</h2>
-      
-      <!-- Summary Cards -->
+      <div class="page-heading">
+        <div>
+          <h2>AI Operations</h2>
+          <p>Training, tuning, model inventory, and runtime health in one place.</p>
+        </div>
+        <button class="btn btn-secondary" (click)="loadData()" [disabled]="loading">
+          {{loading ? 'Refreshing...' : 'Refresh'}}
+        </button>
+      </div>
+
       <div class="summary-cards" *ngIf="statistics">
-        <div class="card">
-          <div class="card-icon">🤖</div>
-          <div class="card-content">
-            <h3>{{statistics.total_models}}</h3>
-            <p>Trained Models</p>
-          </div>
-        </div>
-        
-        <div class="card">
-          <div class="card-icon">📈</div>
-          <div class="card-content">
-            <h3>{{statistics.total_training_sessions}}</h3>
-            <p>Training Sessions</p>
-          </div>
-        </div>
-        
-        <div class="card">
-          <div class="card-icon">⚡</div>
-          <div class="card-content">
-            <h3>{{statistics.active_sessions}}</h3>
-            <p>Active Sessions</p>
-          </div>
-        </div>
-        
-        <div class="card">
-          <div class="card-icon">🧠</div>
-          <div class="card-content">
-            <h3>{{statistics.algorithms.length}}</h3>
-            <p>Algorithms</p>
-          </div>
-        </div>
+        <button class="card" type="button" (click)="goTo('/export-import')">
+          <div class="card-label">Models</div>
+          <strong>{{statistics.total_models}}</strong>
+          <span>Stored model files</span>
+        </button>
+
+        <button class="card" type="button" (click)="goTo('/training')">
+          <div class="card-label">Sessions</div>
+          <strong>{{statistics.total_training_sessions}}</strong>
+          <span>Training log files</span>
+        </button>
+
+        <button class="card" type="button" (click)="goTo('/training')">
+          <div class="card-label">Active</div>
+          <strong>{{statistics.active_sessions}}</strong>
+          <span>Running jobs</span>
+        </button>
+
+        <button class="card" type="button" (click)="goTo('/comparison')">
+          <div class="card-label">Algorithms</div>
+          <strong>{{statistics.algorithms.length}}</strong>
+          <span>Available strategies</span>
+        </button>
       </div>
 
-      <!-- Performance Overview -->
-      <div class="performance-section" *ngIf="performanceStats">
-        <h3>📈 Performance Overview</h3>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <label>Average Reward</label>
-            <div class="stat-value">{{performanceStats.avg_reward | number:'1.2-2'}}</div>
+      <div class="content-grid">
+        <section class="panel" *ngIf="performanceStats">
+          <div class="panel-header">
+            <h3>Performance</h3>
+            <span>Reward range</span>
           </div>
-          <div class="stat-card">
-            <label>Max Reward</label>
-            <div class="stat-value success">{{performanceStats.max_reward | number:'1.2-2'}}</div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <label>Average</label>
+              <strong>{{performanceStats.avg_reward | number:'1.2-2'}}</strong>
+            </div>
+            <div class="stat-card">
+              <label>Best</label>
+              <strong>{{performanceStats.max_reward | number:'1.2-2'}}</strong>
+            </div>
+            <div class="stat-card">
+              <label>Floor</label>
+              <strong>{{performanceStats.min_reward | number:'1.2-2'}}</strong>
+            </div>
           </div>
-          <div class="stat-card">
-            <label>Min Reward</label>
-            <div class="stat-value warning">{{performanceStats.min_reward | number:'1.2-2'}}</div>
+
+          <div class="reward-bars" aria-label="Recent reward chart">
+            <span
+              *ngFor="let reward of performanceStats.rewards"
+              [style.height.%]="reward"
+              [title]="'Reward ' + (reward | number:'1.1-1')">
+            </span>
           </div>
-        </div>
+        </section>
+
+        <section class="panel" *ngIf="systemHealth">
+          <div class="panel-header">
+            <h3>System Health</h3>
+            <span class="status-pill">{{systemHealth.status}}</span>
+          </div>
+
+          <div class="meter-list">
+            <div class="meter">
+              <div><span>CPU</span><strong>{{systemHealth.cpu_usage | number:'1.1-1'}}%</strong></div>
+              <progress [value]="systemHealth.cpu_usage" max="100"></progress>
+            </div>
+            <div class="meter">
+              <div><span>Memory</span><strong>{{systemHealth.memory_usage | number:'1.1-1'}}%</strong></div>
+              <progress [value]="systemHealth.memory_usage" max="100"></progress>
+            </div>
+            <div class="meter">
+              <div><span>Disk</span><strong>{{systemHealth.disk_usage | number:'1.1-1'}}%</strong></div>
+              <progress [value]="systemHealth.disk_usage" max="100"></progress>
+            </div>
+          </div>
+
+          <div class="system-meta">
+            <span>{{systemHealth.active_connections}} websocket connections</span>
+            <span>{{systemHealth.active_trainings}} active trainings</span>
+          </div>
+        </section>
       </div>
 
-      <!-- Quick Actions -->
+      <div class="content-grid">
+        <section class="panel">
+          <div class="panel-header">
+            <h3>Recent Tuning</h3>
+            <button class="link-button" type="button" (click)="goTo('/training')">Open Training</button>
+          </div>
+
+          <div class="session-list" *ngIf="tuningSessions.length > 0; else noTuning">
+            <button class="session-row" type="button" *ngFor="let session of tuningSessions.slice(0, 5)" (click)="goTo('/training')">
+              <span>{{session.algorithm}} / {{session.method}}</span>
+              <strong>{{session.best_trial.score | number:'1.4-4'}}</strong>
+              <small>{{session.trials_completed}} trials</small>
+            </button>
+          </div>
+
+          <ng-template #noTuning>
+            <div class="empty-state">No tuning runs yet.</div>
+          </ng-template>
+        </section>
+
+        <section class="panel" *ngIf="statistics">
+          <div class="panel-header">
+            <h3>Algorithms</h3>
+            <span>{{statistics.last_updated | date:'shortTime'}}</span>
+          </div>
+
+          <div class="algorithms-list">
+            <span class="algorithm-chip" *ngFor="let algorithm of statistics.algorithms">
+              {{algorithm}}
+            </span>
+          </div>
+        </section>
+      </div>
+
       <div class="quick-actions">
-        <h3>⚡ Quick Actions</h3>
-        <div class="action-buttons">
-          <button class="btn btn-primary" (click)="navigateToTraining()">
-            🚀 Start Training
-          </button>
-          <button class="btn btn-secondary" (click)="navigateToModels()">
-            📦 View Models
-          </button>
-          <button class="btn btn-secondary" (click)="navigateToStats()">
-            📊 Statistics
-          </button>
-        </div>
+        <button class="btn btn-primary" (click)="goTo('/training')">Start Training</button>
+        <button class="btn btn-secondary" (click)="goTo('/visualization')">Open Visualization</button>
+        <button class="btn btn-secondary" (click)="goTo('/iot-ai')">Open IoT AI</button>
+        <button class="btn btn-secondary" (click)="goTo('/comparison')">Compare Models</button>
+        <button class="btn btn-secondary" (click)="goTo('/export-import')">Import or Export</button>
       </div>
 
-      <!-- Algorithms List -->
-      <div class="algorithms-section" *ngIf="statistics">
-        <h3>🧠 Available Algorithms</h3>
-        <div class="algorithms-list">
-          <div class="algorithm-chip" *ngFor="let algo of statistics.algorithms">
-            {{algo}}
-          </div>
-        </div>
-      </div>
+      <div class="loading" *ngIf="loading">Loading dashboard data...</div>
 
-      <!-- Loading State -->
-      <div class="loading" *ngIf="loading">
-        <div class="spinner"></div>
-        <p>Loading dashboard data...</p>
-      </div>
-
-      <!-- Error State -->
       <div class="error" *ngIf="error">
-        <p>❌ {{error}}</p>
+        <p>{{error}}</p>
         <button class="btn btn-primary" (click)="loadData()">Retry</button>
       </div>
     </div>
@@ -112,135 +175,191 @@ import { Statistics, PerformanceStats } from '../../models/model.model';
       margin: 0 auto;
     }
 
-    h2 {
+    .page-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
       color: white;
-      margin-bottom: 2rem;
+    }
+
+    .page-heading h2 {
+      margin: 0;
       font-size: 2rem;
     }
 
-    h3 {
-      color: white;
-      margin-bottom: 1rem;
-      font-size: 1.5rem;
+    .page-heading p {
+      margin: 0.35rem 0 0 0;
+      color: rgba(255, 255, 255, 0.78);
     }
 
-    .summary-cards {
+    .summary-cards,
+    .content-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2rem;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .content-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card,
+    .panel {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      color: white;
     }
 
     .card {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border-radius: 12px;
-      padding: 1.5rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      transition: transform 0.3s ease;
+      cursor: pointer;
+      text-align: left;
+      padding: 1.25rem;
+      min-height: 128px;
+      transition: transform 0.2s ease, background 0.2s ease;
     }
 
     .card:hover {
-      transform: translateY(-5px);
+      background: rgba(255, 255, 255, 0.16);
+      transform: translateY(-2px);
     }
 
-    .card-icon {
-      font-size: 3rem;
+    .card-label,
+    .panel-header span,
+    .session-row small {
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 0.86rem;
     }
 
-    .card-content h3 {
+    .card strong {
+      display: block;
+      margin: 0.4rem 0;
+      font-size: 2.25rem;
+      line-height: 1;
+    }
+
+    .card span {
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    .panel {
+      padding: 1.25rem;
+      min-height: 260px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .panel-header h3 {
       margin: 0;
-      font-size: 2.5rem;
-      color: white;
-    }
-
-    .card-content p {
-      margin: 0.5rem 0 0 0;
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 0.9rem;
-    }
-
-    .performance-section,
-    .quick-actions,
-    .algorithms-section {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 1.2rem;
     }
 
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
     }
 
     .stat-card {
-      background: rgba(255, 255, 255, 0.05);
-      padding: 1rem;
+      background: rgba(255, 255, 255, 0.06);
       border-radius: 8px;
+      padding: 0.9rem;
       text-align: center;
     }
 
     .stat-card label {
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 0.9rem;
       display: block;
-      margin-bottom: 0.5rem;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 0.4rem;
+      font-size: 0.84rem;
     }
 
-    .stat-value {
-      font-size: 2rem;
-      font-weight: bold;
-      color: white;
+    .stat-card strong {
+      font-size: 1.35rem;
     }
 
-    .stat-value.success {
-      color: #4caf50;
-    }
-
-    .stat-value.warning {
-      color: #ff9800;
-    }
-
-    .action-buttons {
+    .reward-bars {
       display: flex;
+      align-items: end;
+      gap: 0.45rem;
+      height: 116px;
+      padding-top: 0.5rem;
+    }
+
+    .reward-bars span {
+      flex: 1;
+      min-width: 8px;
+      border-radius: 6px 6px 0 0;
+      background: linear-gradient(180deg, #4ade80, #22c55e);
+    }
+
+    .status-pill {
+      background: rgba(34, 197, 94, 0.2);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      border-radius: 999px;
+      color: #dcfce7;
+      padding: 0.35rem 0.7rem;
+      text-transform: uppercase;
+    }
+
+    .meter-list {
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .meter div,
+    .system-meta {
+      display: flex;
+      justify-content: space-between;
       gap: 1rem;
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    progress {
+      width: 100%;
+      height: 12px;
+      accent-color: #4ade80;
+    }
+
+    .system-meta {
+      margin-top: 1rem;
       flex-wrap: wrap;
+      font-size: 0.9rem;
     }
 
-    .btn {
-      padding: 0.75rem 1.5rem;
-      border: none;
+    .session-list {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .session-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 0.75rem;
+      align-items: center;
+      width: 100%;
+      padding: 0.8rem;
+      border: 0;
       border-radius: 8px;
-      font-size: 1rem;
+      color: white;
+      background: rgba(255, 255, 255, 0.06);
+      text-align: left;
       cursor: pointer;
-      transition: all 0.3s ease;
-      font-weight: 500;
     }
 
-    .btn-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-
-    .btn-primary:hover {
-      transform: scale(1.05);
-      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.3);
+    .session-row:hover {
+      background: rgba(255, 255, 255, 0.12);
     }
 
     .algorithms-list {
@@ -250,46 +369,101 @@ import { Statistics, PerformanceStats } from '../../models/model.model';
     }
 
     .algorithm-chip {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 8px;
       color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 20px;
-      font-size: 0.9rem;
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 0.55rem 0.75rem;
     }
 
+    .quick-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .btn,
+    .link-button {
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .btn {
+      padding: 0.75rem 1rem;
+      font-size: 0.95rem;
+    }
+
+    .btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .btn-primary {
+      background: #22c55e;
+      color: #052e16;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.18);
+      color: white;
+    }
+
+    .link-button {
+      background: transparent;
+      color: white;
+      padding: 0.25rem;
+    }
+
+    .empty-state,
     .loading,
     .error {
-      text-align: center;
-      padding: 3rem;
-      color: white;
+      color: rgba(255, 255, 255, 0.76);
+      padding: 1rem 0;
     }
 
-    .spinner {
-      border: 4px solid rgba(255, 255, 255, 0.3);
-      border-top: 4px solid white;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 1rem;
+    @media (max-width: 980px) {
+      .summary-cards,
+      .content-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
 
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+    @media (max-width: 680px) {
+      .dashboard-container {
+        padding: 1rem;
+      }
+
+      .page-heading,
+      .panel-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .summary-cards,
+      .content-grid,
+      .stats-grid,
+      .session-row {
+        grid-template-columns: 1fr;
+      }
     }
   `]
 })
 export class DashboardComponent implements OnInit {
   statistics: Statistics | null = null;
   performanceStats: PerformanceStats | null = null;
+  systemHealth: SystemHealth | null = null;
+  tuningSessions: TuningSession[] = [];
   loading = false;
   error: string | null = null;
 
   constructor(
+    private api: ApiService,
     private modelService: ModelService,
-    private trainingService: TrainingService
+    private trainingService: TrainingService,
+    private router: Router
   ) {}
 
   ngOnInit() {
@@ -299,43 +473,59 @@ export class DashboardComponent implements OnInit {
   loadData() {
     this.loading = true;
     this.error = null;
+    let pending = 4;
+    const finish = () => {
+      pending -= 1;
+      this.loading = pending > 0;
+    };
 
-    // Load statistics
     this.modelService.getStatistics().subscribe({
       next: (data) => {
         this.statistics = data;
-        this.loading = false;
+        finish();
       },
       error: (err) => {
-        this.error = 'Failed to load statistics';
-        this.loading = false;
+        this.error = 'Failed to load dashboard statistics';
         console.error(err);
+        finish();
       }
     });
 
-    // Load performance stats
     this.modelService.getPerformanceStats().subscribe({
       next: (data) => {
         this.performanceStats = data;
+        finish();
       },
       error: (err) => {
         console.error('Failed to load performance stats:', err);
+        finish();
+      }
+    });
+
+    this.api.get<SystemHealth>('system/health').subscribe({
+      next: (data) => {
+        this.systemHealth = data;
+        finish();
+      },
+      error: (err) => {
+        console.error('Failed to load system health:', err);
+        finish();
+      }
+    });
+
+    this.trainingService.getTuningSessions().subscribe({
+      next: (data) => {
+        this.tuningSessions = data.sessions.slice().reverse();
+        finish();
+      },
+      error: (err) => {
+        console.error('Failed to load tuning sessions:', err);
+        finish();
       }
     });
   }
 
-  navigateToTraining() {
-    // Navigate to training page
-    console.log('Navigate to training');
-  }
-
-  navigateToModels() {
-    // Navigate to models page
-    console.log('Navigate to models');
-  }
-
-  navigateToStats() {
-    // Navigate to statistics page
-    console.log('Navigate to statistics');
+  goTo(path: string) {
+    this.router.navigateByUrl(path);
   }
 }
