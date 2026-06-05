@@ -14,6 +14,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
         </div>
 
         <nav class="app-nav" aria-label="Primary navigation">
+          <a routerLink="/projects" routerLinkActive="active">Projects</a>
           <a routerLink="/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Dashboard</a>
           <a routerLink="/training" routerLinkActive="active">Training</a>
           <a routerLink="/visualization" routerLinkActive="active">Visualization</a>

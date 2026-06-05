@@ -74,6 +74,52 @@ interface OptimizationPlan {
   created_at: string;
 }
 
+interface CloudProvider {
+  id: string;
+  name: string;
+  region: string;
+  status: string;
+  protocols: string[];
+  latency_ms: number;
+}
+
+interface CloudStatus {
+  ingestion_rate_per_min: number;
+  stream_lag_ms: number;
+  storage_used_gb: number;
+  rules_active: number;
+  queued_sync_jobs: number;
+  synced_jobs: number;
+  deployment_count: number;
+  sla_score: number;
+}
+
+interface CloudSyncJob {
+  id: string;
+  provider: string;
+  dataset: string;
+  region: string;
+  records: number;
+  status: string;
+  duration_ms: number;
+  created_at: string;
+}
+
+interface CloudDeployment {
+  id: string;
+  target: string;
+  artifact: string;
+  version: string;
+  status: string;
+  progress: number;
+  created_at: string;
+}
+
+interface DigitalTwinSummary {
+  nodes: Array<{ id: string; label: string; type: string; risk: string }>;
+  edges: Array<{ source: string; target: string; latency_ms: number }>;
+}
+
 @Component({
   selector: 'app-iot-ai',
   standalone: true,
@@ -121,6 +167,84 @@ interface OptimizationPlan {
           <span>{{fleetSummary.top_risk_device.ai.anomaly_score | number:'1.3-3'}} anomaly</span>
         </div>
       </div>
+
+      <section class="panel cloud-panel">
+        <div class="panel-header">
+          <h3>Cloud Service</h3>
+          <span *ngIf="cloudStatus">{{cloudStatus.sla_score | number:'1.2-2'}}% SLA</span>
+        </div>
+
+        <div class="cloud-grid">
+          <div class="cloud-status" *ngIf="cloudStatus">
+            <div class="cloud-metric">
+              <label>Ingestion</label>
+              <strong>{{cloudStatus.ingestion_rate_per_min | number}} / min</strong>
+            </div>
+            <div class="cloud-metric">
+              <label>Stream Lag</label>
+              <strong>{{cloudStatus.stream_lag_ms}} ms</strong>
+            </div>
+            <div class="cloud-metric">
+              <label>Storage</label>
+              <strong>{{cloudStatus.storage_used_gb | number:'1.1-1'}} GB</strong>
+            </div>
+            <div class="cloud-metric">
+              <label>Rules</label>
+              <strong>{{cloudStatus.rules_active}}</strong>
+            </div>
+          </div>
+
+          <div class="provider-list">
+            <button
+              class="provider-card"
+              type="button"
+              *ngFor="let provider of cloudProviders"
+              [class.selected]="selectedProvider === provider.id"
+              (click)="selectedProvider = provider.id">
+              <strong>{{provider.name}}</strong>
+              <span>{{provider.region}} / {{provider.latency_ms}} ms</span>
+              <small>{{provider.protocols.join(', ')}}</small>
+            </button>
+          </div>
+        </div>
+
+        <div class="cloud-actions">
+          <button class="btn btn-primary" type="button" (click)="syncCloud()" [disabled]="cloudBusy">
+            {{cloudBusy ? 'Syncing...' : 'Sync Telemetry'}}
+          </button>
+          <button class="btn btn-secondary" type="button" (click)="deployCloud()" [disabled]="cloudBusy">
+            Deploy Edge Model
+          </button>
+          <span *ngIf="digitalTwin">{{digitalTwin.nodes.length}} twin nodes / {{digitalTwin.edges.length}} links</span>
+        </div>
+
+        <div class="content-grid cloud-history">
+          <div>
+            <h4>Sync Jobs</h4>
+            <div class="command-list" *ngIf="syncJobs.length > 0; else noSyncJobs">
+              <div class="command-row" *ngFor="let job of syncJobs.slice(0, 4)">
+                <span>{{job.provider}}</span>
+                <strong>{{job.records | number}} records</strong>
+                <small>{{job.duration_ms}} ms</small>
+              </div>
+            </div>
+            <ng-template #noSyncJobs>
+              <div class="empty-state">No cloud sync jobs yet.</div>
+            </ng-template>
+          </div>
+
+          <div>
+            <h4>Deployments</h4>
+            <div class="command-list" *ngIf="deployments.length > 0">
+              <div class="command-row" *ngFor="let deployment of deployments.slice(0, 4)">
+                <span>{{deployment.target}}</span>
+                <strong>{{deployment.artifact}}</strong>
+                <small>{{deployment.progress}}%</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div class="device-grid">
         <button
@@ -334,6 +458,85 @@ interface OptimizationPlan {
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 1rem;
       margin-bottom: 1rem;
+    }
+
+    .cloud-panel {
+      margin-bottom: 1rem;
+    }
+
+    .cloud-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .cloud-status {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .cloud-metric,
+    .provider-card {
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 0.85rem;
+    }
+
+    .cloud-metric label {
+      display: block;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 0.82rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .provider-list {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .provider-card {
+      border: 1px solid transparent;
+      color: white;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .provider-card.selected,
+    .provider-card:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.24);
+    }
+
+    .provider-card strong,
+    .provider-card span,
+    .provider-card small {
+      display: block;
+    }
+
+    .provider-card span,
+    .provider-card small,
+    .cloud-actions span {
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 0.35rem;
+    }
+
+    .cloud-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .cloud-history {
+      margin-top: 1rem;
+    }
+
+    .cloud-history h4 {
+      margin-bottom: 0.75rem;
     }
 
     .fleet-grid {
@@ -588,6 +791,9 @@ interface OptimizationPlan {
 
       .page-heading,
       .fleet-grid,
+      .cloud-grid,
+      .cloud-status,
+      .provider-list,
       .content-grid,
       .stats-grid,
       .forecast-row,
@@ -617,11 +823,18 @@ export class IoTAiComponent implements OnInit, OnDestroy {
   insights: IoTInsight[] = [];
   commands: IoTCommand[] = [];
   optimizationPlan: OptimizationPlan | null = null;
+  cloudProviders: CloudProvider[] = [];
+  cloudStatus: CloudStatus | null = null;
+  syncJobs: CloudSyncJob[] = [];
+  deployments: CloudDeployment[] = [];
+  digitalTwin: DigitalTwinSummary | null = null;
+  selectedProvider = 'aws-iot';
   controlMode = 'auto';
   targetTemperature = 24;
   commandStatus = '';
   autoRefresh = false;
   optimizing = false;
+  cloudBusy = false;
   loading = false;
   error = '';
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -643,6 +856,7 @@ export class IoTAiComponent implements OnInit, OnDestroy {
     this.error = '';
     this.loadFleetSummary();
     this.loadCommands();
+    this.loadCloudService();
 
     this.api.get<{ devices: IoTDevice[] }>('iot/devices').subscribe({
       next: (data) => {
@@ -665,6 +879,46 @@ export class IoTAiComponent implements OnInit, OnDestroy {
         this.insights = data.insights;
       },
       error: (err) => console.error('Failed to load IoT insights:', err)
+    });
+  }
+
+  loadCloudService() {
+    this.api.get<{ providers: CloudProvider[] }>('iot/cloud/providers').subscribe({
+      next: (data) => {
+        this.cloudProviders = data.providers;
+        if (!this.cloudProviders.some((provider) => provider.id === this.selectedProvider)) {
+          this.selectedProvider = this.cloudProviders[0]?.id || 'aws-iot';
+        }
+      },
+      error: (err) => console.error('Failed to load cloud providers:', err)
+    });
+
+    this.api.get<CloudStatus>('iot/cloud/status').subscribe({
+      next: (data) => {
+        this.cloudStatus = data;
+      },
+      error: (err) => console.error('Failed to load cloud status:', err)
+    });
+
+    this.api.get<{ jobs: CloudSyncJob[] }>('iot/cloud/sync').subscribe({
+      next: (data) => {
+        this.syncJobs = data.jobs;
+      },
+      error: (err) => console.error('Failed to load cloud sync jobs:', err)
+    });
+
+    this.api.get<{ deployments: CloudDeployment[] }>('iot/cloud/deployments').subscribe({
+      next: (data) => {
+        this.deployments = data.deployments;
+      },
+      error: (err) => console.error('Failed to load cloud deployments:', err)
+    });
+
+    this.api.get<DigitalTwinSummary>('iot/cloud/digital-twin').subscribe({
+      next: (data) => {
+        this.digitalTwin = data;
+      },
+      error: (err) => console.error('Failed to load digital twin:', err)
     });
   }
 
@@ -739,6 +993,42 @@ export class IoTAiComponent implements OnInit, OnDestroy {
       error: (err) => {
         console.error('Failed to optimize IoT fleet:', err);
         this.optimizing = false;
+      }
+    });
+  }
+
+  syncCloud() {
+    this.cloudBusy = true;
+    this.api.post<CloudSyncJob>('iot/cloud/sync', {
+      provider: this.selectedProvider,
+      dataset: 'telemetry',
+      region: this.cloudProviders.find((provider) => provider.id === this.selectedProvider)?.region || 'ap-southeast-1'
+    }).subscribe({
+      next: () => {
+        this.cloudBusy = false;
+        this.loadCloudService();
+      },
+      error: (err) => {
+        console.error('Failed to sync cloud telemetry:', err);
+        this.cloudBusy = false;
+      }
+    });
+  }
+
+  deployCloud() {
+    this.cloudBusy = true;
+    this.api.post<CloudDeployment>('iot/cloud/deploy', {
+      target: 'edge-gateway-a',
+      artifact: 'anomaly-model-v1',
+      version: '1.0.0'
+    }).subscribe({
+      next: () => {
+        this.cloudBusy = false;
+        this.loadCloudService();
+      },
+      error: (err) => {
+        console.error('Failed to deploy cloud artifact:', err);
+        this.cloudBusy = false;
       }
     });
   }

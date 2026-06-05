@@ -16,6 +16,9 @@ SMOKE_NOT_MODEL = "smoke_notes.txt"
 BASE_PATHS = [
     "/",
     "/api/health",
+    "/api/projects",
+    "/api/projects/ai-core",
+    "/api/projects/iot-ai/tasks",
     "/api/training/status",
     "/api/training/history",
     "/api/models",
@@ -30,6 +33,11 @@ BASE_PATHS = [
     "/api/iot/telemetry",
     "/api/iot/insights",
     "/api/iot/commands",
+    "/api/iot/cloud/providers",
+    "/api/iot/cloud/status",
+    "/api/iot/cloud/sync",
+    "/api/iot/cloud/deployments",
+    "/api/iot/cloud/digital-twin",
     "/api/system/health",
 ]
 
@@ -101,6 +109,13 @@ def main():
         status, _ = request("POST", f"/api/training/stop/{session_id}", {})
         print(f"OK {status} /api/training/stop/{session_id}")
 
+        status, _ = request(
+            "PATCH",
+            "/api/projects/ai-core/tasks/ai-task-2",
+            {"status": "done", "owner": "AI", "note": "Smoke update"},
+        )
+        print(f"OK {status} /api/projects/ai-core/tasks/ai-task-2")
+
         tuning_config = {
             "algorithm": "dqn",
             "method": "random_search",
@@ -123,6 +138,20 @@ def main():
 
         status, _ = request("POST", "/api/iot/optimize", {"objective": "energy"})
         print(f"OK {status} /api/iot/optimize")
+
+        status, _ = request(
+            "POST",
+            "/api/iot/cloud/sync",
+            {"provider": "aws-iot", "dataset": "telemetry", "region": "ap-southeast-1"},
+        )
+        print(f"OK {status} /api/iot/cloud/sync")
+
+        status, _ = request(
+            "POST",
+            "/api/iot/cloud/deploy",
+            {"target": "edge-gateway-a", "artifact": "anomaly-model-v1", "version": "1.0.0"},
+        )
+        print(f"OK {status} /api/iot/cloud/deploy")
 
         os.makedirs(MODELS_DIR, exist_ok=True)
         model_paths = [

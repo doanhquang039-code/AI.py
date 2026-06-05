@@ -76,6 +76,16 @@ class IoTControlCommand(BaseModel):
     mode: str = "auto"
     target_temperature: Optional[float] = None
 
+class ProjectTaskUpdate(BaseModel):
+    status: str
+    owner: Optional[str] = None
+    note: str = ""
+
+class CloudSyncRequest(BaseModel):
+    provider: str = "aws-iot"
+    dataset: str = "telemetry"
+    region: str = "ap-southeast-1"
+
 # In-memory storage (replace with database in production)
 training_sessions = {}
 models_cache = []
@@ -83,6 +93,9 @@ active_websockets: List[WebSocket] = []
 experiments = {}
 tuning_sessions = {}
 iot_commands = []
+project_task_overrides: Dict[str, Dict[str, Any]] = {}
+cloud_sync_jobs: List[Dict[str, Any]] = []
+cloud_deployments: List[Dict[str, Any]] = []
 MODELS_DIR = Path("models")
 ALLOWED_MODEL_EXTENSIONS = {".pt", ".npy"}
 
@@ -137,6 +150,49 @@ async def health_check():
         "active_websockets": len(manager.active_connections),
         "active_training_sessions": len([s for s in training_sessions.values() if s["status"] == "running"])
     }
+
+@app.get("/api/projects")
+async def get_projects():
+    """Get the two primary product workstreams: AI Core and IoT AI."""
+    return {
+        "projects": [_apply_project_overrides(project) for project in _build_project_portfolio()],
+        "updated_at": datetime.now().isoformat()
+    }
+
+@app.get("/api/projects/{project_id}")
+async def get_project(project_id: str):
+    """Get a single project roadmap."""
+    project = _find_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return _apply_project_overrides(project)
+
+@app.get("/api/projects/{project_id}/tasks")
+async def get_project_tasks(project_id: str):
+    """Get project tasks grouped by milestone."""
+    project = _find_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {
+        "project_id": project_id,
+        "tasks": _apply_project_overrides(project)["tasks"],
+    }
+
+@app.patch("/api/projects/{project_id}/tasks/{task_id}")
+async def update_project_task(project_id: str, task_id: str, update: ProjectTaskUpdate):
+    """Update a project task status in memory."""
+    project = _find_project(project_id)
+    if not project or not any(task["id"] == task_id for task in project["tasks"]):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    key = f"{project_id}:{task_id}"
+    project_task_overrides[key] = {
+        "status": update.status,
+        "owner": update.owner,
+        "note": update.note,
+        "updated_at": datetime.now().isoformat(),
+    }
+    return {"project_id": project_id, "task_id": task_id, **project_task_overrides[key]}
 
 @app.get("/api/training/status")
 async def get_training_status():
@@ -651,6 +707,132 @@ async def optimize_iot_fleet(payload: Dict[str, Any]):
         "created_at": datetime.now().isoformat(),
     }
 
+@app.get("/api/iot/cloud/providers")
+async def get_iot_cloud_providers():
+    """Get supported IoT cloud service connectors."""
+    providers = [
+        {
+            "id": "aws-iot",
+            "name": "AWS IoT Core",
+            "region": "ap-southeast-1",
+            "status": "connected",
+            "protocols": ["MQTT", "HTTPS", "Rules Engine"],
+            "latency_ms": random.randint(38, 92),
+        },
+        {
+            "id": "azure-iot",
+            "name": "Azure IoT Hub",
+            "region": "southeastasia",
+            "status": "standby",
+            "protocols": ["MQTT", "AMQP", "Device Twin"],
+            "latency_ms": random.randint(45, 110),
+        },
+        {
+            "id": "gcp-iot",
+            "name": "Google Pub/Sub IoT Bridge",
+            "region": "asia-southeast1",
+            "status": "standby",
+            "protocols": ["Pub/Sub", "Cloud Run", "BigQuery"],
+            "latency_ms": random.randint(52, 130),
+        },
+    ]
+    return {"providers": providers, "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/iot/cloud/status")
+async def get_iot_cloud_status():
+    """Get cloud ingestion and edge deployment health."""
+    queued = len([job for job in cloud_sync_jobs if job["status"] == "queued"])
+    synced = len([job for job in cloud_sync_jobs if job["status"] == "synced"])
+    return {
+        "ingestion_rate_per_min": random.randint(2400, 9800),
+        "stream_lag_ms": random.randint(40, 280),
+        "storage_used_gb": round(random.uniform(12.5, 88.0), 2),
+        "rules_active": random.randint(8, 24),
+        "queued_sync_jobs": queued,
+        "synced_jobs": synced,
+        "deployment_count": len(cloud_deployments),
+        "sla_score": round(random.uniform(98.2, 99.98), 2),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+@app.post("/api/iot/cloud/sync")
+async def post_iot_cloud_sync(request: CloudSyncRequest):
+    """Queue a simulated telemetry sync job to a cloud provider."""
+    job = {
+        "id": f"sync_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(cloud_sync_jobs) + 1}",
+        "provider": request.provider,
+        "dataset": request.dataset,
+        "region": request.region,
+        "records": random.randint(5000, 45000),
+        "status": "synced",
+        "duration_ms": random.randint(350, 2400),
+        "created_at": datetime.now().isoformat(),
+    }
+    cloud_sync_jobs.append(job)
+    return job
+
+@app.get("/api/iot/cloud/sync")
+async def get_iot_cloud_sync_jobs():
+    """Get recent cloud sync jobs."""
+    return {"jobs": list(reversed(cloud_sync_jobs[-20:])), "count": len(cloud_sync_jobs)}
+
+@app.post("/api/iot/cloud/deploy")
+async def post_iot_cloud_deploy(payload: Dict[str, Any]):
+    """Create a simulated cloud-to-edge deployment."""
+    target = payload.get("target", "edge-gateway-a")
+    artifact = payload.get("artifact", "anomaly-model-v1")
+    deployment = {
+        "id": f"deploy_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(cloud_deployments) + 1}",
+        "target": target,
+        "artifact": artifact,
+        "version": payload.get("version", "1.0.0"),
+        "status": "rolling_out",
+        "progress": random.randint(35, 88),
+        "created_at": datetime.now().isoformat(),
+    }
+    cloud_deployments.append(deployment)
+    return deployment
+
+@app.get("/api/iot/cloud/deployments")
+async def get_iot_cloud_deployments():
+    """Get recent cloud-to-edge deployments."""
+    defaults = [
+        {
+            "id": "deploy_demo_gateway",
+            "target": "edge-gateway-a",
+            "artifact": "telemetry-normalizer",
+            "version": "0.9.4",
+            "status": "healthy",
+            "progress": 100,
+            "created_at": datetime.now().isoformat(),
+        }
+    ]
+    return {
+        "deployments": list(reversed(cloud_deployments[-20:])) or defaults,
+        "count": len(cloud_deployments),
+    }
+
+@app.get("/api/iot/cloud/digital-twin")
+async def get_iot_cloud_digital_twin():
+    """Get a simulated cloud digital twin graph summary."""
+    devices = _generate_iot_devices()
+    return {
+        "nodes": [
+            {"id": device["id"], "label": device["name"], "type": "sensor", "risk": device["ai"]["risk"]}
+            for device in devices
+        ] + [
+            {"id": "cloud-ingestion", "label": "Cloud Ingestion", "type": "cloud", "risk": "low"},
+            {"id": "edge-gateway-a", "label": "Edge Gateway A", "type": "gateway", "risk": "low"},
+        ],
+        "edges": [
+            {"source": device["id"], "target": "edge-gateway-a", "latency_ms": random.randint(5, 28)}
+            for device in devices
+        ] + [
+            {"source": "edge-gateway-a", "target": "cloud-ingestion", "latency_ms": random.randint(32, 95)}
+        ],
+        "timestamp": datetime.now().isoformat(),
+    }
+
 def _generate_iot_devices() -> List[Dict[str, Any]]:
     devices = []
     for index, zone in enumerate(["Factory A", "Factory B", "Cold Storage", "Solar Roof", "Server Room"], start=1):
@@ -818,6 +1000,97 @@ async def get_algorithms():
             }
         ]
     }
+
+def _build_project_portfolio() -> List[Dict[str, Any]]:
+    return [
+        {
+            "id": "ai-core",
+            "name": "AI Core Platform",
+            "summary": "Training, tuning, simulation, model operations, and decision intelligence.",
+            "health": round(random.uniform(78, 94), 1),
+            "stage": "buildout",
+            "capabilities": [
+                "Reinforcement learning lab",
+                "Hyperparameter tuning",
+                "Model evaluation and comparison",
+                "Simulation visualization",
+                "Experiment tracking",
+            ],
+            "metrics": {
+                "models": len(os.listdir(MODELS_DIR)) if MODELS_DIR.exists() else 0,
+                "active_trainings": len([s for s in training_sessions.values() if s["status"] == "running"]),
+                "tuning_runs": len(tuning_sessions),
+                "algorithms": 5,
+            },
+            "milestones": [
+                {"id": "ai-m1", "name": "Training workspace", "progress": 82},
+                {"id": "ai-m2", "name": "Model governance", "progress": 55},
+                {"id": "ai-m3", "name": "Autonomous evaluation", "progress": 36},
+            ],
+            "tasks": [
+                {"id": "ai-task-1", "title": "Persist tuning sessions to disk", "status": "next", "owner": "AI"},
+                {"id": "ai-task-2", "title": "Promote best tuning params into training config", "status": "active", "owner": "AI"},
+                {"id": "ai-task-3", "title": "Add experiment run comparison charts", "status": "next", "owner": "Frontend"},
+                {"id": "ai-task-4", "title": "Model registry metadata and tags", "status": "backlog", "owner": "API"},
+            ],
+        },
+        {
+            "id": "iot-ai",
+            "name": "IoT AI Operations",
+            "summary": "Fleet telemetry, anomaly detection, energy optimization, and command orchestration.",
+            "health": round(random.uniform(74, 91), 1),
+            "stage": "buildout",
+            "capabilities": [
+                "Fleet health overview",
+                "Telemetry forecasting",
+                "Anomaly scoring",
+                "Optimization planning",
+                "Control command queue",
+                "Cloud sync and deployment",
+            ],
+            "metrics": {
+                "devices": 5,
+                "queued_commands": len(iot_commands),
+                "cloud_sync_jobs": len(cloud_sync_jobs),
+                "cloud_deployments": len(cloud_deployments),
+                "avg_anomaly": round(float(np.mean([_iot_anomaly_score(random.uniform(18, 38), random.uniform(0.05, 1.4), random.uniform(1.5, 12.0)) for _ in range(5)])), 3),
+                "optimization_actions": random.randint(2, 6),
+            },
+            "milestones": [
+                {"id": "iot-m1", "name": "Fleet observability", "progress": 76},
+                {"id": "iot-m2", "name": "Control loop automation", "progress": 48},
+                {"id": "iot-m3", "name": "Edge deployment readiness", "progress": 31},
+            ],
+            "tasks": [
+                {"id": "iot-task-1", "title": "Persist command audit trail", "status": "active", "owner": "API"},
+                {"id": "iot-task-2", "title": "Add device group filtering", "status": "next", "owner": "Frontend"},
+                {"id": "iot-task-3", "title": "Train anomaly baseline per zone", "status": "next", "owner": "AI"},
+                {"id": "iot-task-4", "title": "MQTT connector scaffold", "status": "active", "owner": "IoT"},
+                {"id": "iot-task-5", "title": "Cloud digital twin deployment pipeline", "status": "next", "owner": "Cloud"},
+            ],
+        },
+    ]
+
+def _find_project(project_id: str) -> Optional[Dict[str, Any]]:
+    return next((project for project in _build_project_portfolio() if project["id"] == project_id), None)
+
+def _apply_project_overrides(project: Dict[str, Any]) -> Dict[str, Any]:
+    project = json.loads(json.dumps(project))
+    completed = 0
+    for task in project["tasks"]:
+        override = project_task_overrides.get(f"{project['id']}:{task['id']}")
+        if override:
+            task.update({key: value for key, value in override.items() if value is not None})
+        if task["status"] == "done":
+            completed += 1
+
+    project["task_summary"] = {
+        "total": len(project["tasks"]),
+        "done": completed,
+        "active": len([task for task in project["tasks"] if task["status"] == "active"]),
+        "next": len([task for task in project["tasks"] if task["status"] == "next"]),
+    }
+    return project
 
 def generate_world_state(episode: int, step: int) -> Dict[str, Any]:
     """Generate a lightweight demo world state for realtime visualization."""

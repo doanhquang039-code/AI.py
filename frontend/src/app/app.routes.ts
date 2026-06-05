@@ -5,9 +5,11 @@ import { VisualizationComponent } from './components/visualization/visualization
 import { ComparisonComponent } from './components/comparison/comparison.component';
 import { ExportImportComponent } from './components/export-import/export-import.component';
 import { IoTAiComponent } from './components/iot-ai/iot-ai.component';
+import { ProjectHubComponent } from './components/project-hub/project-hub.component';
 
 export const routes: Routes = [
   { path: '', component: DashboardComponent },
+  { path: 'projects', component: ProjectHubComponent },
   { path: 'dashboard', component: DashboardComponent },
   { path: 'training', component: TrainingComponent },
   { path: 'visualization', component: VisualizationComponent },

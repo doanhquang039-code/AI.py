@@ -153,6 +153,7 @@ interface SystemHealth {
       </div>
 
       <div class="quick-actions">
+        <button class="btn btn-secondary" (click)="goTo('/projects')">Project Hub</button>
         <button class="btn btn-primary" (click)="goTo('/training')">Start Training</button>
         <button class="btn btn-secondary" (click)="goTo('/visualization')">Open Visualization</button>
         <button class="btn btn-secondary" (click)="goTo('/iot-ai')">Open IoT AI</button>

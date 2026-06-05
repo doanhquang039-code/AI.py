@@ -45,6 +45,14 @@ export class ApiService {
     );
   }
 
+  patch<T>(endpoint: string, data: any): Observable<T> {
+    return this.http.patch<T>(`${this.apiUrl}/${endpoint}`, data, {
+      headers: this.getHeaders()
+    }).pipe(
+      catchError(this.handleError)
+    );
+  }
+
   postForm<T>(endpoint: string, data: FormData): Observable<T> {
     return this.http.post<T>(`${this.apiUrl}/${endpoint}`, data).pipe(
       catchError(this.handleError)
