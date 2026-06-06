@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -12,6 +12,7 @@ import asyncio
 import random
 import shutil
 import time
+import hashlib
 
 from ai.hyperparameter_tuner import HyperparameterTuner, HyperparameterSpace, OptimizationMethod
 
@@ -86,6 +87,21 @@ class CloudSyncRequest(BaseModel):
     dataset: str = "telemetry"
     region: str = "ap-southeast-1"
 
+class BiometricVerifyRequest(BaseModel):
+    identity_id: str
+    modality: str = "face"
+    template_hash: str = ""
+    liveness_score: float = 0.86
+
+class CopilotQuestion(BaseModel):
+    question: str
+    focus: str = "overview"
+
+class AnalyticsRunRequest(BaseModel):
+    dataset: str = "operations"
+    horizon: int = 7
+    sensitivity: float = 0.72
+
 # In-memory storage (replace with database in production)
 training_sessions = {}
 models_cache = []
@@ -96,8 +112,32 @@ iot_commands = []
 project_task_overrides: Dict[str, Dict[str, Any]] = {}
 cloud_sync_jobs: List[Dict[str, Any]] = []
 cloud_deployments: List[Dict[str, Any]] = []
+biometric_profiles: Dict[str, Dict[str, Any]] = {}
+biometric_events: List[Dict[str, Any]] = []
 MODELS_DIR = Path("models")
 ALLOWED_MODEL_EXTENSIONS = {".pt", ".npy"}
+BIOMETRIC_MODALITIES = {
+    "face": {
+        "label": "Face Recognition",
+        "threshold": 0.82,
+        "signals": ["embedding", "liveness", "pose", "occlusion"],
+    },
+    "fingerprint": {
+        "label": "Fingerprint",
+        "threshold": 0.88,
+        "signals": ["minutiae", "ridge_flow", "sensor_quality", "spoof_guard"],
+    },
+    "voice": {
+        "label": "Voice Print",
+        "threshold": 0.79,
+        "signals": ["speaker_embedding", "noise_floor", "phrase_match", "replay_guard"],
+    },
+    "palm": {
+        "label": "Palm Vein",
+        "threshold": 0.84,
+        "signals": ["vein_pattern", "temperature", "alignment", "sensor_quality"],
+    },
+}
 
 # WebSocket Manager
 class ConnectionManager:
@@ -945,6 +985,429 @@ def _iot_anomaly_score(temperature: float, vibration: float, energy: float) -> f
     score = temp_score * 0.34 + vibration_score * 0.46 + energy_score * 0.2
     return round(float(score), 3)
 
+@app.get("/api/biometric/modalities")
+async def get_biometric_modalities():
+    """Get supported biometric AI modalities and operational thresholds."""
+    return {
+        "modalities": [
+            {"id": key, **value}
+            for key, value in BIOMETRIC_MODALITIES.items()
+        ],
+        "privacy": {
+            "raw_sample_storage": False,
+            "template_strategy": "sha256-demo-template",
+            "note": "Demo endpoints keep only derived metadata and template hashes.",
+        },
+    }
+
+@app.get("/api/biometric/summary")
+async def get_biometric_summary():
+    """Get biometric AI operations summary."""
+    profile_count = len(biometric_profiles)
+    event_count = len(biometric_events)
+    verified_count = len([event for event in biometric_events if event.get("decision") == "verified"])
+    avg_quality = (
+        round(float(np.mean([profile["quality_score"] for profile in biometric_profiles.values()])), 3)
+        if biometric_profiles else 0.0
+    )
+    avg_match = (
+        round(float(np.mean([event["match_score"] for event in biometric_events])), 3)
+        if biometric_events else 0.0
+    )
+    return {
+        "profile_count": profile_count,
+        "event_count": event_count,
+        "verified_count": verified_count,
+        "review_count": len([event for event in biometric_events if event.get("decision") == "review"]),
+        "avg_quality": avg_quality,
+        "avg_match": avg_match,
+        "modalities_online": len(BIOMETRIC_MODALITIES),
+        "risk_level": "low" if avg_match >= 0.84 or event_count == 0 else "medium",
+        "updated_at": datetime.now().isoformat(),
+    }
+
+@app.get("/api/biometric/profiles")
+async def get_biometric_profiles():
+    """List enrolled biometric profiles without raw samples."""
+    return {
+        "profiles": sorted(
+            biometric_profiles.values(),
+            key=lambda profile: profile["enrolled_at"],
+            reverse=True,
+        )
+    }
+
+@app.post("/api/biometric/enroll")
+async def enroll_biometric_profile(
+    identity_id: str = Form(...),
+    display_name: str = Form(""),
+    modality: str = Form("face"),
+    sample: UploadFile = File(None),
+):
+    """Enroll a biometric demo profile using derived metadata only."""
+    if modality not in BIOMETRIC_MODALITIES:
+        raise HTTPException(status_code=400, detail="Unsupported biometric modality")
+
+    sample_bytes = await sample.read() if sample else b""
+    template_hash = _biometric_template_hash(identity_id, modality, sample_bytes)
+    quality_score = _biometric_quality_score(template_hash, len(sample_bytes), modality)
+    profile_key = f"{identity_id}:{modality}"
+    profile = {
+        "id": profile_key,
+        "identity_id": identity_id,
+        "display_name": display_name or identity_id,
+        "modality": modality,
+        "template_hash": template_hash,
+        "quality_score": quality_score,
+        "sample_size": len(sample_bytes),
+        "status": "ready" if quality_score >= 0.72 else "needs_retake",
+        "enrolled_at": datetime.now().isoformat(),
+    }
+    biometric_profiles[profile_key] = profile
+    biometric_events.append({
+        "id": f"bio_evt_{len(biometric_events) + 1:04d}",
+        "identity_id": identity_id,
+        "modality": modality,
+        "type": "enrollment",
+        "match_score": quality_score,
+        "decision": profile["status"],
+        "created_at": profile["enrolled_at"],
+    })
+    return profile
+
+@app.post("/api/biometric/verify")
+async def verify_biometric_profile(request: BiometricVerifyRequest):
+    """Verify a biometric demo profile against an enrolled template hash."""
+    if request.modality not in BIOMETRIC_MODALITIES:
+        raise HTTPException(status_code=400, detail="Unsupported biometric modality")
+
+    profile_key = f"{request.identity_id}:{request.modality}"
+    profile = biometric_profiles.get(profile_key)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Biometric profile not found")
+
+    match_score = _biometric_match_score(
+        enrolled_hash=profile["template_hash"],
+        probe_hash=request.template_hash or profile["template_hash"],
+        liveness_score=request.liveness_score,
+        quality_score=profile["quality_score"],
+    )
+    threshold = BIOMETRIC_MODALITIES[request.modality]["threshold"]
+    decision = "verified" if match_score >= threshold and request.liveness_score >= 0.68 else "review"
+    event = {
+        "id": f"bio_evt_{len(biometric_events) + 1:04d}",
+        "identity_id": request.identity_id,
+        "modality": request.modality,
+        "type": "verification",
+        "match_score": match_score,
+        "threshold": threshold,
+        "liveness_score": round(max(0.0, min(1.0, request.liveness_score)), 3),
+        "decision": decision,
+        "created_at": datetime.now().isoformat(),
+    }
+    biometric_events.append(event)
+    return event
+
+@app.get("/api/biometric/audit")
+async def get_biometric_audit():
+    """Get recent biometric AI events."""
+    return {"events": list(reversed(biometric_events[-30:]))}
+
+@app.get("/api/copilot/briefing")
+async def get_ai_copilot_briefing():
+    """Generate an AI operations briefing across the research workspace."""
+    models_count = len(os.listdir(MODELS_DIR)) if MODELS_DIR.exists() else 0
+    active_trainings = len([session for session in training_sessions.values() if session["status"] == "running"])
+    fleet_devices = _generate_iot_devices()
+    avg_iot_risk = round(float(np.mean([device["ai"]["anomaly_score"] for device in fleet_devices])), 3)
+    biometric_quality = (
+        round(float(np.mean([profile["quality_score"] for profile in biometric_profiles.values()])), 3)
+        if biometric_profiles else 0.0
+    )
+    project_health = [_apply_project_overrides(project)["health"] for project in _build_project_portfolio()]
+    readiness = round(float(np.mean(project_health)), 1) if project_health else 0.0
+    analytics_summary = await get_data_analytics_summary("operations")
+
+    risks = []
+    if models_count == 0:
+        risks.append("Model registry is empty; train or import a baseline model before comparison.")
+    if active_trainings == 0:
+        risks.append("No active training jobs; schedule a short benchmark run to keep metrics fresh.")
+    if avg_iot_risk >= 0.45:
+        risks.append("IoT anomaly baseline is trending high; review top-risk telemetry before deployment.")
+    if biometric_profiles and biometric_quality < 0.72:
+        risks.append("Biometric enrollment quality is below target; retake low quality samples.")
+    if not biometric_profiles:
+        risks.append("Biometric module has no enrolled templates; enroll a demo identity to test verification.")
+
+    recommendations = [
+        {
+            "title": "Create a baseline run",
+            "area": "training",
+            "priority": "high" if models_count == 0 else "medium",
+            "action": "Run DQN for 20-50 episodes, then compare against PPO or A2C.",
+        },
+        {
+            "title": "Tune one algorithm",
+            "area": "optimization",
+            "priority": "medium",
+            "action": "Start random search with 5-8 trials and promote the best params to training config.",
+        },
+        {
+            "title": "Harden identity AI",
+            "area": "biometric",
+            "priority": "high" if not biometric_profiles else "medium",
+            "action": "Enroll one face and one fingerprint profile, then verify with liveness above 0.85.",
+        },
+        {
+            "title": "Review edge anomalies",
+            "area": "iot",
+            "priority": "medium" if avg_iot_risk < 0.45 else "high",
+            "action": "Open IoT AI and run Optimize Fleet to generate control recommendations.",
+        },
+    ]
+
+    return {
+        "readiness": readiness,
+        "signals": {
+            "models": models_count,
+            "active_trainings": active_trainings,
+            "tuning_sessions": len(tuning_sessions),
+            "iot_avg_anomaly": avg_iot_risk,
+            "biometric_profiles": len(biometric_profiles),
+            "biometric_avg_quality": biometric_quality,
+            "analytics_quality": analytics_summary["quality_score"],
+            "analytics_anomalies": analytics_summary["anomaly_count"],
+        },
+        "risks": risks[:5],
+        "recommendations": recommendations,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+@app.post("/api/copilot/ask")
+async def ask_ai_copilot(question: CopilotQuestion):
+    """Answer an AI operations question with local project context."""
+    prompt = (question.question or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    lowered = prompt.lower()
+    briefing = await get_ai_copilot_briefing()
+    if any(keyword in lowered for keyword in ["face", "finger", "biometric", "khuôn mặt", "vân tay"]):
+        answer = (
+            "Biometric AI is ready as a privacy-first demo pipeline. Enroll a profile, verify it with liveness, "
+            "then review audit events. Next technical step: connect a real embedding adapter and encrypt templates."
+        )
+        next_steps = ["Enroll face and fingerprint samples", "Verify with liveness >= 0.85", "Add OpenCV/SDK adapter layer"]
+    elif any(keyword in lowered for keyword in ["train", "model", "dqn", "ppo", "training"]):
+        answer = (
+            f"The workspace currently sees {briefing['signals']['models']} model files and "
+            f"{briefing['signals']['active_trainings']} active training jobs. Start with a small DQN baseline, "
+            "then run tuning before comparing models."
+        )
+        next_steps = ["Run a 50 episode DQN baseline", "Start hyperparameter tuning", "Compare best model against PPO"]
+    elif any(keyword in lowered for keyword in ["iot", "device", "sensor", "edge"]):
+        answer = (
+            f"IoT average anomaly is {briefing['signals']['iot_avg_anomaly']}. Use Optimize Fleet, inspect the "
+            "top-risk device, and deploy only after the cloud sync queue is clean."
+        )
+        next_steps = ["Open IoT AI", "Run Optimize Fleet", "Deploy edge model if anomaly score is stable"]
+    else:
+        answer = (
+            f"Overall AI readiness is {briefing['readiness']}%. The highest value move is to create a baseline "
+            "training run, enroll a biometric demo profile, and keep IoT anomaly monitoring active."
+        )
+        next_steps = ["Start a baseline training run", "Enroll a biometric profile", "Check Project Hub active tasks"]
+
+    return {
+        "answer": answer,
+        "focus": question.focus,
+        "next_steps": next_steps,
+        "confidence": 0.86,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+@app.get("/api/data-analytics/datasets")
+async def get_data_analytics_datasets():
+    """List synthetic datasets available for AI analytics."""
+    return {
+        "datasets": [
+            {
+                "id": "operations",
+                "name": "AI Operations",
+                "description": "Training throughput, model quality, runtime health, and task completion.",
+                "records": 720,
+                "freshness": "realtime-demo",
+            },
+            {
+                "id": "iot",
+                "name": "IoT Telemetry",
+                "description": "Device energy, anomaly, vibration, and maintenance prediction signals.",
+                "records": 1440,
+                "freshness": "streaming-demo",
+            },
+            {
+                "id": "biometric",
+                "name": "Biometric Identity",
+                "description": "Enrollment quality, liveness, verification score, and audit decisions.",
+                "records": max(120, len(biometric_events) * 12),
+                "freshness": "event-driven-demo",
+            },
+        ],
+        "generated_at": datetime.now().isoformat(),
+    }
+
+@app.get("/api/data-analytics/summary")
+async def get_data_analytics_summary(dataset: str = "operations"):
+    """Get AI analytics summary for a dataset."""
+    points = _analytics_series(dataset, 30)
+    values = [point["value"] for point in points]
+    anomalies = [point for point in points if point["anomaly_score"] >= 0.72]
+    trend = values[-1] - values[0] if values else 0.0
+    return {
+        "dataset": dataset,
+        "records": len(points),
+        "mean": round(float(np.mean(values)), 3),
+        "min": round(float(np.min(values)), 3),
+        "max": round(float(np.max(values)), 3),
+        "trend": round(float(trend), 3),
+        "anomaly_count": len(anomalies),
+        "quality_score": round(max(0.5, min(0.99, 1.0 - (len(anomalies) / max(len(points), 1)) * 0.8)), 3),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+@app.post("/api/data-analytics/run")
+async def run_data_analytics(request: AnalyticsRunRequest):
+    """Run a deterministic AI analytics pass over a synthetic dataset."""
+    horizon = max(3, min(int(request.horizon), 30))
+    sensitivity = max(0.4, min(float(request.sensitivity), 0.95))
+    history = _analytics_series(request.dataset, 36)
+    values = [point["value"] for point in history]
+    anomalies = [point for point in history if point["anomaly_score"] >= sensitivity]
+    forecast = _analytics_forecast(values, horizon)
+    correlations = _analytics_correlations(request.dataset)
+    recommendations = _analytics_recommendations(request.dataset, anomalies, forecast)
+    return {
+        "run_id": f"analytics_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        "dataset": request.dataset,
+        "sensitivity": sensitivity,
+        "history": history,
+        "forecast": forecast,
+        "anomalies": anomalies[-8:],
+        "correlations": correlations,
+        "recommendations": recommendations,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+@app.get("/api/data-analytics/insights")
+async def get_data_analytics_insights(dataset: str = "operations"):
+    """Get concise analytics insights for cards and dashboards."""
+    summary = await get_data_analytics_summary(dataset)
+    direction = "up" if summary["trend"] >= 0 else "down"
+    severity = "high" if summary["anomaly_count"] >= 6 else "medium" if summary["anomaly_count"] >= 3 else "low"
+    return {
+        "insights": [
+            {
+                "title": "Trend direction",
+                "severity": "medium" if abs(summary["trend"]) > 8 else "low",
+                "body": f"{dataset} signal is trending {direction} by {abs(summary['trend']):.2f} points over the window.",
+            },
+            {
+                "title": "Anomaly pressure",
+                "severity": severity,
+                "body": f"{summary['anomaly_count']} anomalies detected with quality score {summary['quality_score']:.2f}.",
+            },
+            {
+                "title": "Recommended next step",
+                "severity": "low",
+                "body": "Run forecast analysis, review correlation drivers, then promote stable signals into Copilot briefing.",
+            },
+        ],
+        "summary": summary,
+    }
+
+def _analytics_series(dataset: str, points: int) -> List[Dict[str, Any]]:
+    safe_dataset = dataset if dataset in {"operations", "iot", "biometric"} else "operations"
+    base = {"operations": 68.0, "iot": 42.0, "biometric": 74.0}[safe_dataset]
+    volatility = {"operations": 7.0, "iot": 14.0, "biometric": 9.5}[safe_dataset]
+    series = []
+    for index in range(points):
+        seasonal = np.sin(index / 3.2) * volatility * 0.38
+        drift = index * {"operations": 0.16, "iot": -0.05, "biometric": 0.11}[safe_dataset]
+        noise = random.uniform(-volatility * 0.35, volatility * 0.35)
+        value = max(0.0, min(100.0, base + seasonal + drift + noise))
+        rolling_target = base + drift
+        anomaly_score = max(0.0, min(0.99, abs(value - rolling_target) / max(volatility * 1.25, 1.0)))
+        series.append({
+            "index": index,
+            "label": f"T-{points - index - 1}",
+            "value": round(float(value), 3),
+            "anomaly_score": round(float(anomaly_score), 3),
+        })
+    return series
+
+def _analytics_forecast(values: List[float], horizon: int) -> List[Dict[str, Any]]:
+    if not values:
+        values = [50.0]
+    recent = values[-8:]
+    slope = (recent[-1] - recent[0]) / max(len(recent) - 1, 1)
+    baseline = recent[-1]
+    forecast = []
+    for step in range(1, horizon + 1):
+        confidence = max(0.55, 0.92 - step * 0.025)
+        value = max(0.0, min(100.0, baseline + slope * step + np.sin(step / 2) * 1.8))
+        forecast.append({
+            "step": step,
+            "value": round(float(value), 3),
+            "confidence": round(float(confidence), 3),
+        })
+    return forecast
+
+def _analytics_correlations(dataset: str) -> List[Dict[str, Any]]:
+    if dataset == "iot":
+        pairs = [("energy_kw", 0.76), ("vibration", 0.69), ("temperature", 0.58), ("cloud_lag", 0.41)]
+    elif dataset == "biometric":
+        pairs = [("liveness_score", 0.81), ("sample_quality", 0.73), ("sensor_quality", 0.66), ("template_age", -0.34)]
+    else:
+        pairs = [("training_runs", 0.74), ("model_count", 0.61), ("system_health", 0.57), ("open_tasks", -0.42)]
+    return [{"feature": feature, "correlation": score} for feature, score in pairs]
+
+def _analytics_recommendations(dataset: str, anomalies: List[Dict[str, Any]], forecast: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    priority = "high" if len(anomalies) >= 5 else "medium" if anomalies else "low"
+    forecast_delta = forecast[-1]["value"] - forecast[0]["value"] if len(forecast) > 1 else 0.0
+    return [
+        {
+            "priority": priority,
+            "title": "Investigate anomaly drivers",
+            "action": f"Review top {min(len(anomalies), 5)} anomaly points in {dataset} and compare against correlation drivers.",
+        },
+        {
+            "priority": "medium" if abs(forecast_delta) > 5 else "low",
+            "title": "Watch forecast drift",
+            "action": f"Forecast drift is {forecast_delta:.2f}; set an alert if it crosses 8 points.",
+        },
+        {
+            "priority": "low",
+            "title": "Promote to Copilot",
+            "action": "Feed stable analytics signals into Copilot recommendations for daily operator briefing.",
+        },
+    ]
+
+def _biometric_template_hash(identity_id: str, modality: str, sample_bytes: bytes) -> str:
+    seed = sample_bytes if sample_bytes else f"{identity_id}:{modality}:{datetime.now().date()}".encode("utf-8")
+    return hashlib.sha256(seed + f":{identity_id}:{modality}".encode("utf-8")).hexdigest()
+
+def _biometric_quality_score(template_hash: str, sample_size: int, modality: str) -> float:
+    entropy = int(template_hash[:8], 16) / 0xFFFFFFFF
+    size_factor = min(sample_size / 250_000, 1.0) if sample_size else 0.62
+    modality_bias = {"face": 0.05, "fingerprint": 0.08, "voice": 0.02, "palm": 0.06}.get(modality, 0.0)
+    return round(max(0.45, min(0.99, 0.5 + entropy * 0.26 + size_factor * 0.18 + modality_bias)), 3)
+
+def _biometric_match_score(enrolled_hash: str, probe_hash: str, liveness_score: float, quality_score: float) -> float:
+    same_prefix = sum(1 for a, b in zip(enrolled_hash[:24], probe_hash[:24]) if a == b) / 24
+    liveness = max(0.0, min(1.0, liveness_score))
+    return round(max(0.0, min(0.995, 0.42 + same_prefix * 0.32 + liveness * 0.16 + quality_score * 0.1)), 3)
+
 @app.get("/api/system/health")
 async def system_health():
     """Get system health details for dashboard diagnostics."""
@@ -1067,6 +1530,69 @@ def _build_project_portfolio() -> List[Dict[str, Any]]:
                 {"id": "iot-task-3", "title": "Train anomaly baseline per zone", "status": "next", "owner": "AI"},
                 {"id": "iot-task-4", "title": "MQTT connector scaffold", "status": "active", "owner": "IoT"},
                 {"id": "iot-task-5", "title": "Cloud digital twin deployment pipeline", "status": "next", "owner": "Cloud"},
+            ],
+        },
+        {
+            "id": "biometric-ai",
+            "name": "Biometric AI Identity",
+            "summary": "Face, fingerprint, voice, and palm-vein recognition pipelines with privacy-first audit trails.",
+            "health": round(random.uniform(71, 89), 1),
+            "stage": "prototype",
+            "capabilities": [
+                "Face recognition workflow",
+                "Fingerprint template scoring",
+                "Voice print verification",
+                "Palm vein pipeline",
+                "Liveness and spoof guard scoring",
+                "Privacy-safe audit trail",
+            ],
+            "metrics": {
+                "profiles": len(biometric_profiles),
+                "events": len(biometric_events),
+                "modalities": len(BIOMETRIC_MODALITIES),
+                "avg_quality": round(float(np.mean([p["quality_score"] for p in biometric_profiles.values()])), 3) if biometric_profiles else 0.0,
+            },
+            "milestones": [
+                {"id": "bio-m1", "name": "Enrollment and verification API", "progress": 68},
+                {"id": "bio-m2", "name": "Operator dashboard", "progress": 52},
+                {"id": "bio-m3", "name": "Real model adapter layer", "progress": 18},
+            ],
+            "tasks": [
+                {"id": "bio-task-1", "title": "Wire OpenCV face embedding adapter", "status": "next", "owner": "AI"},
+                {"id": "bio-task-2", "title": "Add fingerprint SDK connector interface", "status": "backlog", "owner": "AI"},
+                {"id": "bio-task-3", "title": "Persist hashed biometric templates securely", "status": "next", "owner": "API"},
+                {"id": "bio-task-4", "title": "Add anti-spoofing policy controls", "status": "active", "owner": "Security"},
+            ],
+        },
+        {
+            "id": "data-analytics-ai",
+            "name": "Data Analytics AI",
+            "summary": "Forecasting, anomaly detection, correlation analysis, and operational insight generation.",
+            "health": round(random.uniform(75, 92), 1),
+            "stage": "buildout",
+            "capabilities": [
+                "Synthetic analytics datasets",
+                "Forecast generation",
+                "Anomaly scoring",
+                "Correlation drivers",
+                "Recommendation engine",
+            ],
+            "metrics": {
+                "datasets": 3,
+                "forecast_horizon": 30,
+                "analytics_quality": round(random.uniform(0.82, 0.96), 3),
+                "insight_cards": 3,
+            },
+            "milestones": [
+                {"id": "da-m1", "name": "Analytics API", "progress": 72},
+                {"id": "da-m2", "name": "Forecast and anomaly UI", "progress": 61},
+                {"id": "da-m3", "name": "Real data connectors", "progress": 22},
+            ],
+            "tasks": [
+                {"id": "da-task-1", "title": "Add CSV and database dataset connectors", "status": "next", "owner": "API"},
+                {"id": "da-task-2", "title": "Promote analytics signals into Copilot", "status": "active", "owner": "AI"},
+                {"id": "da-task-3", "title": "Add chart library visualization layer", "status": "next", "owner": "Frontend"},
+                {"id": "da-task-4", "title": "Persist analysis run history", "status": "backlog", "owner": "Data"},
             ],
         },
     ]

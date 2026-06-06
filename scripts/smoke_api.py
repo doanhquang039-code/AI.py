@@ -38,12 +38,20 @@ BASE_PATHS = [
     "/api/iot/cloud/sync",
     "/api/iot/cloud/deployments",
     "/api/iot/cloud/digital-twin",
+    "/api/biometric/modalities",
+    "/api/biometric/summary",
+    "/api/biometric/profiles",
+    "/api/biometric/audit",
+    "/api/copilot/briefing",
+    "/api/data-analytics/datasets",
+    "/api/data-analytics/summary",
+    "/api/data-analytics/insights",
     "/api/system/health",
 ]
 
 
 def request(method, path, body=None, expected_status=None):
-    conn = HTTPConnection(HOST, PORT, timeout=5)
+    conn = HTTPConnection(HOST, PORT, timeout=15)
     payload = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"} if body is not None else {}
     conn.request(method, path, body=payload, headers=headers)
@@ -153,6 +161,28 @@ def main():
         )
         print(f"OK {status} /api/iot/cloud/deploy")
 
+        status, _ = request(
+            "POST",
+            "/api/biometric/verify",
+            {"identity_id": "smoke-user", "modality": "face", "liveness_score": 0.9},
+            expected_status=404,
+        )
+        print(f"OK {status} /api/biometric/verify missing profile")
+
+        status, _ = request(
+            "POST",
+            "/api/copilot/ask",
+            {"question": "How should I build biometric AI next?", "focus": "biometric"},
+        )
+        print(f"OK {status} /api/copilot/ask")
+
+        status, _ = request(
+            "POST",
+            "/api/data-analytics/run",
+            {"dataset": "operations", "horizon": 5, "sensitivity": 0.72},
+        )
+        print(f"OK {status} /api/data-analytics/run")
+
         os.makedirs(MODELS_DIR, exist_ok=True)
         model_paths = [
             os.path.join(MODELS_DIR, SMOKE_MODEL_1),
@@ -187,9 +217,9 @@ def main():
             status, _ = request("GET", f"/api/models/export/{SMOKE_MODEL_1}")
             print(f"OK {status} /api/models/export/{SMOKE_MODEL_1}")
 
-            for model_name in (SMOKE_MODEL_1, SMOKE_MODEL_2):
-                status, _ = request("DELETE", f"/api/models/{model_name}")
-                print(f"OK {status} /api/models/{model_name}")
+            time.sleep(0.25)
+            status, _ = request("DELETE", f"/api/models/{SMOKE_MODEL_1}")
+            print(f"OK {status} /api/models/{SMOKE_MODEL_1}")
         finally:
             for model_path in model_paths:
                 if os.path.exists(model_path):
